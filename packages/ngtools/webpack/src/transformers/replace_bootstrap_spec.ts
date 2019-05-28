@@ -85,7 +85,7 @@ describe('@ngtools/webpack transformers', () => {
       const { program, compilerHost } = createTypescriptContext(input);
       const transformer = replaceBootstrap(
         () => true,
-        () => ({ path: '/project/src/app/app.module', className: 'AppModule' }),
+        () => ([{ path: '/project/src/app/app.module', className: 'AppModule' }]),
         () => program.getTypeChecker(),
         true,
       );

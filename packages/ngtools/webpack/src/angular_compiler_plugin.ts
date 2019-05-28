@@ -707,7 +707,7 @@ export class AngularCompilerPlugin {
       }
 
       if (this._options.mainPaths) {
-        this._mainPaths = this._compilerHost.resolve(this._options.mainPaths);
+        this._mainPaths = this._options.mainPaths.map(path => this._compilerHost.resolve(path));
       }
 
       const inputDecorator = new VirtualFileSystemDecorator(
@@ -885,6 +885,7 @@ export class AngularCompilerPlugin {
       if (this._mainPaths) {
         return this._mainPaths.map(path => workaroundResolve(path)).includes(fileName);
       }
+      return false;
     };
     // TODO: fix fn usage
     const getEntryModules = () => this.entryModules
