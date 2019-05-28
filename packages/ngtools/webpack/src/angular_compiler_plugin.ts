@@ -91,6 +91,7 @@ export interface AngularCompilerPluginOptions {
   entryModule?: string;
   entryModules?: string[];
   mainPath?: string;
+  mainPaths?: string[];
   skipCodeGeneration?: boolean;
   hostReplacementPaths?: { [path: string]: string } | ((path: string) => string);
   forkTypeChecker?: boolean;
@@ -141,6 +142,7 @@ export class AngularCompilerPlugin {
   private _entryModule: string | null;
   private _entryModules: string[] | null;
   private _mainPath: string | undefined;
+  private _mainPaths: string[] | undefined;
   private _basePath: string;
   private _transformers: ts.TransformerFactory<ts.SourceFile>[] = [];
   private _platformTransformers: ts.TransformerFactory<ts.SourceFile>[] | null = null;
@@ -424,6 +426,22 @@ export class AngularCompilerPlugin {
       }
       timeEnd('AngularCompilerPlugin._make.resolveEntryModuleFromMain');
     }
+
+    if (!this._entryModule && this._mainPaths) {
+      time('AngularCompilerPlugin._make.resolveEntryModuleFromMain');
+      this._entryModules = this._mainPaths
+        .map(path => resolveEntryModuleFromMain(
+          path, this._compilerHost, this._getTsProgram() as ts.Program) || "")
+        .filter(module => module.length > 0);
+
+      if (!this.entryModules && !this._compilerOptions.enableIvy) {
+        this._warnings.push('Lazy routes discovery is not enabled. '
+            + 'Because there is neither an entryModule nor a '
+            + 'statically analyzable bootstrap code in the main file.',
+        );
+      }
+      timeEnd('AngularCompilerPlugin._make.resolveEntryModuleFromMain');
+    }
   }
 
   private _findLazyRoutesInAst(changedFilePaths: string[]): LazyRouteMap {
@@ -688,6 +706,10 @@ export class AngularCompilerPlugin {
         this._mainPath = this._compilerHost.resolve(this._options.mainPath);
       }
 
+      if (this._options.mainPaths) {
+        this._mainPaths = this._compilerHost.resolve(this._options.mainPaths);
+      }
+
       const inputDecorator = new VirtualFileSystemDecorator(
         compilerWithFileSystems.inputFileSystem,
         this._compilerHost,
@@ -854,9 +876,16 @@ export class AngularCompilerPlugin {
   private _makeTransformers() {
     const isAppPath = (fileName: string) =>
       !fileName.endsWith('.ngfactory.ts') && !fileName.endsWith('.ngstyle.ts');
-    const isMainPath = (fileName: string) => fileName === (
-      this._mainPath ? workaroundResolve(this._mainPath) : this._mainPath
-    );
+    const isMainPath = (fileName: string) => {
+      if (this._mainPath) {
+        return fileName === (
+            this._mainPath ? workaroundResolve(this._mainPath) : this._mainPath
+        );
+      }
+      if (this._mainPaths) {
+        return this._mainPaths.map(path => workaroundResolve(path)).includes(fileName);
+      }
+    };
     // TODO: fix fn usage
     const getEntryModules = () => this.entryModules
       ? this.entryModules.map((entryModule) => {
