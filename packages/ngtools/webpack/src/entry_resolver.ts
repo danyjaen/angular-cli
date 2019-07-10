@@ -137,7 +137,7 @@ function _symbolImportLookup(refactor: TypeScriptFileRefactor,
 
 export function resolveEntryModuleFromMain(mainPath: string,
                                            host: ts.CompilerHost,
-                                           program: ts.Program): string | null {
+                                           program: ts.Program): string[] | null {
   const source = new TypeScriptFileRefactor(mainPath, host, program);
 
   const bootstrap = source.findAstNodes(source.sourceFile, ts.SyntaxKind.CallExpression, true)
@@ -153,12 +153,15 @@ export function resolveEntryModuleFromMain(mainPath: string,
     .map(node => node.arguments[0] as ts.Identifier)
     .filter(node => node.kind == ts.SyntaxKind.Identifier);
 
-  if (bootstrap.length === 1) {
-    const bootstrapSymbolName = bootstrap[0].text;
-    const module = _symbolImportLookup(source, bootstrapSymbolName, host, program);
-    if (module) {
-      return `${module.replace(/\.ts$/, '')}#${bootstrapSymbolName}`;
-    }
+  if (bootstrap.length) {
+    return bootstrap.map(bootstrapSymbolName => {
+      const module = _symbolImportLookup(source, bootstrapSymbolName.text, host, program);
+      if (module) {
+        return `${module.replace(/\.ts$/, '')}#${bootstrapSymbolName.text}`;
+      } else {
+        return '';
+      }
+    }).filter(entryModule => entryModule.length);
   }
 
   return null;

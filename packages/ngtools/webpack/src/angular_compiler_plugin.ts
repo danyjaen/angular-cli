@@ -415,8 +415,9 @@ export class AngularCompilerPlugin {
     // If there's still no entryModule try to resolve from mainPath.
     if (!this._entryModule && this._mainPath) {
       time('AngularCompilerPlugin._make.resolveEntryModuleFromMain');
-      this._entryModule = resolveEntryModuleFromMain(
-        this._mainPath, this._compilerHost, this._getTsProgram() as ts.Program);
+      const entryModules = resolveEntryModuleFromMain(
+          this._mainPath, this._compilerHost, this._getTsProgram() as ts.Program);
+      this._entryModule = entryModules && entryModules[0] !== '' ? entryModules[0] : null;
 
       if (!this.entryModules && !this._compilerOptions.enableIvy) {
         this._warnings.push('Lazy routes discovery is not enabled. '
@@ -431,8 +432,14 @@ export class AngularCompilerPlugin {
       time('AngularCompilerPlugin._make.resolveEntryModuleFromMain');
       this._entryModules = this._mainPaths
         .map(path => resolveEntryModuleFromMain(
-          path, this._compilerHost, this._getTsProgram() as ts.Program) || "")
-        .filter(module => module.length > 0);
+          path, this._compilerHost, this._getTsProgram() as ts.Program))
+        .reduce((acc: string[], module) => {
+          if (module && module.length) {
+            acc = acc.concat(module);
+          }
+
+          return acc;
+        }, []);
 
       if (!this.entryModules && !this._compilerOptions.enableIvy) {
         this._warnings.push('Lazy routes discovery is not enabled. '
