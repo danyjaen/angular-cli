@@ -374,6 +374,18 @@ describe('CoreSchemaRegistry', () => {
       .toPromise().then(done, done.fail);
   });
 
+  it('works with true as a schema and post-transforms', async () => {
+    const registry = new CoreSchemaRegistry();
+    registry.addPostTransform(addUndefinedDefaults);
+    const data: any = { a: 1, b: 2 };  // tslint:disable-line:no-any
+
+    const validate = await registry.compile(true).toPromise();
+    const result = await validate(data).toPromise();
+
+    expect(result.success).toBe(true);
+    expect(result.data).toBe(data);
+  });
+
   it('adds undefined properties', done => {
     const registry = new CoreSchemaRegistry();
     registry.addPostTransform(addUndefinedDefaults);
@@ -428,6 +440,42 @@ describe('CoreSchemaRegistry', () => {
           expect(data.objAllBad).toBeUndefined();
           expect(data.objNotOk).toEqual({});
           expect(data.objNotBad).toBeUndefined();
+        }),
+      )
+      .toPromise().then(done, done.fail);
+  });
+
+  it('adds defaults to undefined properties', done => {
+    const registry = new CoreSchemaRegistry();
+    registry.addPostTransform(addUndefinedDefaults);
+    // tslint:disable-line:no-any
+    const data: any = {
+      bool: undefined,
+      str: undefined,
+      obj: {
+        num: undefined,
+      },
+    };
+
+    registry
+      .compile({
+        properties: {
+          bool: { type: 'boolean', default: true },
+          str: { type: 'string', default: 'someString' },
+          obj: {
+            properties: {
+              num: { type: 'number', default: 0 },
+            },
+          },
+        },
+      })
+      .pipe(
+        mergeMap(validator => validator(data)),
+        map(result => {
+          expect(result.success).toBe(true);
+          expect(data.bool).toBe(true);
+          expect(data.str).toBe('someString');
+          expect(data.obj.num).toBe(0);
         }),
       )
       .toPromise().then(done, done.fail);

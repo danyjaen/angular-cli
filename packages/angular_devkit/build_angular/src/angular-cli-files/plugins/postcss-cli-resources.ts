@@ -27,6 +27,8 @@ function wrapUrl(url: string): string {
 export interface PostcssCliResourcesOptions {
   baseHref?: string;
   deployUrl?: string;
+  resourcesOutputPath?: string;
+  rebaseRootRelative?: boolean;
   filename: string;
   loader: webpack.loader.LoaderContext;
 }
@@ -47,6 +49,8 @@ export default postcss.plugin('postcss-cli-resources', (options: PostcssCliResou
   const {
     deployUrl = '',
     baseHref = '',
+    resourcesOutputPath = '',
+    rebaseRootRelative = false,
     filename,
     loader,
   } = options;
@@ -56,6 +60,10 @@ export default postcss.plugin('postcss-cli-resources', (options: PostcssCliResou
   const process = async (inputUrl: string, context: string, resourceCache: Map<string, string>) => {
     // If root-relative, absolute or protocol relative url, leave as is
     if (/^((?:\w+:)?\/\/|data:|chrome:|#)/.test(inputUrl)) {
+      return inputUrl;
+    }
+
+    if (!rebaseRootRelative && /^\//.test(inputUrl)) {
       return inputUrl;
     }
 
@@ -95,7 +103,7 @@ export default postcss.plugin('postcss-cli-resources', (options: PostcssCliResou
 
     const { pathname, hash, search } = url.parse(inputUrl.replace(/\\/g, '/'));
     const resolver = (file: string, base: string) => new Promise<string>((resolve, reject) => {
-      loader.resolve(base, file, (err, result) => {
+      loader.resolve(base, decodeURI(file), (err, result) => {
         if (err) {
           reject(err);
 
@@ -115,11 +123,15 @@ export default postcss.plugin('postcss-cli-resources', (options: PostcssCliResou
           return;
         }
 
-        const outputPath = interpolateName(
+        let outputPath = interpolateName(
           { resourcePath: result } as webpack.loader.LoaderContext,
           filename,
           { content },
         );
+
+        if (resourcesOutputPath) {
+          outputPath = path.posix.join(resourcesOutputPath, outputPath);
+        }
 
         loader.addDependency(result);
         loader.emitFile(outputPath, content, undefined);
@@ -163,7 +175,8 @@ export default postcss.plugin('postcss-cli-resources', (options: PostcssCliResou
       let modified = false;
 
       // We want to load it relative to the file that imports
-      const context = path.dirname(decl.source.input.file);
+      const inputFile = decl.source && decl.source.input.file;
+      const context = inputFile && path.dirname(inputFile) || loader.context;
 
       // tslint:disable-next-line:no-conditional-assignment
       while (match = urlRegex.exec(value)) {

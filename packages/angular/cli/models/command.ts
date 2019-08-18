@@ -7,7 +7,9 @@
  */
 
 // tslint:disable:no-global-tslint-disable no-any
-import { logging, strings, tags, terminal } from '@angular-devkit/core';
+import { analytics, logging, strings, tags } from '@angular-devkit/core';
+import * as path from 'path';
+import { colors } from '../utilities/color';
 import { getWorkspace } from '../utilities/config';
 import {
   Arguments,
@@ -16,7 +18,8 @@ import {
   CommandDescriptionMap,
   CommandScope,
   CommandWorkspace,
-  Option, SubCommandDescription,
+  Option,
+  SubCommandDescription,
 } from './interface';
 
 export interface BaseCommandOptions {
@@ -26,9 +29,10 @@ export interface BaseCommandOptions {
 export abstract class Command<T extends BaseCommandOptions = BaseCommandOptions> {
   public allowMissingWorkspace = false;
   public workspace: CommandWorkspace;
+  public analytics: analytics.Analytics;
 
-  protected static commandMap: CommandDescriptionMap;
-  static setCommandMap(map: CommandDescriptionMap) {
+  protected static commandMap: () => Promise<CommandDescriptionMap>;
+  static setCommandMap(map: () => Promise<CommandDescriptionMap>) {
     this.commandMap = map;
   }
 
@@ -38,6 +42,7 @@ export abstract class Command<T extends BaseCommandOptions = BaseCommandOptions>
     protected readonly logger: logging.Logger,
   ) {
     this.workspace = context.workspace;
+    this.analytics = context.analytics || new analytics.NoopAnalytics();
   }
 
   async initialize(options: T & Arguments): Promise<void> {
@@ -64,12 +69,8 @@ export abstract class Command<T extends BaseCommandOptions = BaseCommandOptions>
     const args = this.description.options.filter(x => x.positional !== undefined);
     const opts = this.description.options.filter(x => x.positional === undefined);
 
-    const argDisplay = args && args.length > 0
-      ? ' ' + args.map(a => `<${a.name}>`).join(' ')
-      : '';
-    const optionsDisplay = opts && opts.length > 0
-      ? ` [options]`
-      : ``;
+    const argDisplay = args && args.length > 0 ? ' ' + args.map(a => `<${a.name}>`).join(' ') : '';
+    const optionsDisplay = opts && opts.length > 0 ? ` [options]` : ``;
 
     this.logger.info(`usage: ng ${name}${argDisplay}${optionsDisplay}`);
     this.logger.info('');
@@ -91,7 +92,7 @@ export abstract class Command<T extends BaseCommandOptions = BaseCommandOptions>
     if (args.length > 0) {
       this.logger.info(`arguments:`);
       args.forEach(o => {
-        this.logger.info(`  ${terminal.cyan(o.name)}`);
+        this.logger.info(`  ${colors.cyan(o.name)}`);
         if (o.description) {
           this.logger.info(formatDescription(o.description));
         }
@@ -106,10 +107,11 @@ export abstract class Command<T extends BaseCommandOptions = BaseCommandOptions>
         .filter(o => !o.hidden)
         .sort((a, b) => a.name.localeCompare(b.name))
         .forEach(o => {
-          const aliases = o.aliases && o.aliases.length > 0
-            ? '(' + o.aliases.map(a => `-${a}`).join(' ') + ')'
-            : '';
-          this.logger.info(`  ${terminal.cyan('--' + strings.dasherize(o.name))} ${aliases}`);
+          const aliases =
+            o.aliases && o.aliases.length > 0
+              ? '(' + o.aliases.map(a => `-${a}`).join(' ') + ')'
+              : '';
+          this.logger.info(`  ${colors.cyan('--' + strings.dasherize(o.name))} ${aliases}`);
           if (o.description) {
             this.logger.info(formatDescription(o.description));
           }
@@ -123,13 +125,16 @@ export abstract class Command<T extends BaseCommandOptions = BaseCommandOptions>
         if (this.workspace.configFile) {
           this.logger.fatal(tags.oneLine`
             The ${this.description.name} command requires to be run outside of a project, but a
-            project definition was found at "${this.workspace.configFile}".
+            project definition was found at "${path.join(
+              this.workspace.root,
+              this.workspace.configFile,
+            )}".
           `);
           throw 1;
         }
         break;
       case CommandScope.InProject:
-        if (!this.workspace.configFile || getWorkspace('local') === null) {
+        if (!this.workspace.configFile || (await getWorkspace('local')) === null) {
           this.logger.fatal(tags.oneLine`
             The ${this.description.name} command requires to be run in an Angular project, but a
             project definition could not be found.
@@ -141,6 +146,24 @@ export abstract class Command<T extends BaseCommandOptions = BaseCommandOptions>
         // Can't miss this.
         break;
     }
+  }
+
+  async reportAnalytics(
+    paths: string[],
+    options: T & Arguments,
+    dimensions: (boolean | number | string)[] = [],
+    metrics: (boolean | number | string)[] = [],
+  ): Promise<void> {
+    for (const option of this.description.options) {
+      const ua = option.userAnalytics;
+      const v = options[option.name];
+
+      if (v !== undefined && !Array.isArray(v) && ua) {
+        dimensions[ua] = v;
+      }
+    }
+
+    this.analytics.pageview('/command/' + paths.join('/'), { dimensions, metrics });
   }
 
   abstract async run(options: T & Arguments): Promise<number | void>;
@@ -156,7 +179,14 @@ export abstract class Command<T extends BaseCommandOptions = BaseCommandOptions>
     } else if (options.help === 'json' || options.help === 'JSON') {
       return this.printJsonHelp(options);
     } else {
-      return await this.run(options);
+      const startTime = +new Date();
+      await this.reportAnalytics([this.description.name], options);
+      const result = await this.run(options);
+      const endTime = +new Date();
+
+      this.analytics.timing(this.description.name, 'duration', endTime - startTime);
+
+      return result;
     }
   }
 }

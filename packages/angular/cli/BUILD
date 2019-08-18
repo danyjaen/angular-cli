@@ -5,7 +5,7 @@
 
 licenses(["notice"])  # MIT
 
-load("@build_bazel_rules_typescript//:defs.bzl", "ts_library")
+load("@npm_bazel_typescript//:defs.bzl", "ts_library")
 load("//tools:ts_json_schema.bzl", "ts_json_schema")
 
 package(default_visibility = ["//visibility:public"])
@@ -19,20 +19,30 @@ ts_library(
             "**/*_spec_large.ts",
         ],
     ),
-    data = glob(["**/*.json", "**/*.md"]),
+    data = glob([
+        "**/*.json",
+        "**/*.md",
+    ]),
     module_name = "@angular/cli",
     # strict_checks = False,
     deps = [
         ":command_schemas",
         "//packages/angular_devkit/architect",
+        "//packages/angular_devkit/architect:node",
         "//packages/angular_devkit/core",
         "//packages/angular_devkit/core:node",
         "//packages/angular_devkit/schematics",
         "//packages/angular_devkit/schematics:tools",
         # @typings: es2017.object
+        "@npm//@types/debug",
+        "@npm//debug",
         "@npm//@types/node",
         "@npm//@types/inquirer",
         "@npm//@types/semver",
+        "@npm//@types/universal-analytics",
+        "@npm//@types/uuid",
+        "@npm//ansi-colors",
+        "@npm//rxjs",
     ],
 )
 
@@ -41,13 +51,14 @@ ts_library(
     srcs = [],
     deps = [
         ":add_schema",
+        ":analytics_schema",
         ":build_schema",
         ":config_schema",
+        ":deploy_schema",
         ":deprecated_schema",
         ":doc_schema",
         ":e2e_schema",
         ":easter_egg_schema",
-        ":eject_schema",
         ":generate_schema",
         ":help_schema",
         ":lint_schema",
@@ -62,6 +73,14 @@ ts_library(
 )
 
 ts_json_schema(
+    name = "analytics_schema",
+    src = "commands/analytics.json",
+    data = [
+        "commands/definitions.json",
+    ],
+)
+
+ts_json_schema(
     name = "add_schema",
     src = "commands/add.json",
     data = [
@@ -72,6 +91,14 @@ ts_json_schema(
 ts_json_schema(
     name = "build_schema",
     src = "commands/build.json",
+    data = [
+        "commands/definitions.json",
+    ],
+)
+
+ts_json_schema(
+    name = "deploy_schema",
+    src = "commands/deploy.json",
     data = [
         "commands/definitions.json",
     ],
@@ -112,14 +139,6 @@ ts_json_schema(
 ts_json_schema(
     name = "easter_egg_schema",
     src = "commands/easter-egg.json",
-    data = [
-        "commands/definitions.json",
-    ],
-)
-
-ts_json_schema(
-    name = "eject_schema",
-    src = "commands/eject.json",
     data = [
         "commands/definitions.json",
     ],

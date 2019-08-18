@@ -17,6 +17,7 @@ import {
   tags,
 } from '@angular-devkit/core';
 import { writeFileSync } from 'fs';
+import { v4 as uuidV4 } from 'uuid';
 import { Command } from '../models/command';
 import { Arguments, CommandScope } from '../models/interface';
 import {
@@ -27,12 +28,55 @@ import {
 } from '../utilities/config';
 import { Schema as ConfigCommandSchema, Value as ConfigCommandSchemaValue } from './config';
 
+function _validateBoolean(value: string) {
+  if (('' + value).trim() === 'true') {
+    return true;
+  } else if (('' + value).trim() === 'false') {
+    return false;
+  } else {
+    throw new Error(`Invalid value type; expected Boolean, received ${JSON.stringify(value)}.`);
+  }
+}
+function _validateNumber(value: string) {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue)) {
+    return numberValue;
+  }
+  throw new Error(`Invalid value type; expected Number, received ${JSON.stringify(value)}.`);
+}
+function _validateString(value: string) {
+  return value;
+}
+function _validateAnalytics(value: string) {
+  if (value === '') {
+    // Disable analytics.
+    return null;
+  } else {
+    return value;
+  }
+}
+function _validateAnalyticsSharingUuid(value: string) {
+  if (value == '') {
+    return uuidV4();
+  } else {
+    return value;
+  }
+}
+function _validateAnalyticsSharingTracking(value: string) {
+  if (!value.match(/^GA-\d+-\d+$/)) {
+    throw new Error(`Invalid GA property ID: ${JSON.stringify(value)}.`);
+  }
 
-const validCliPaths = new Map([
-  ['cli.warnings.versionMismatch', 'boolean'],
-  ['cli.warnings.typescriptMismatch', 'boolean'],
-  ['cli.defaultCollection', 'string'],
-  ['cli.packageManager', 'string'],
+  return value;
+}
+
+const validCliPaths = new Map<string, (arg: string) => JsonValue>([
+  ['cli.warnings.versionMismatch', _validateBoolean],
+  ['cli.defaultCollection', _validateString],
+  ['cli.packageManager', _validateString],
+  ['cli.analytics', _validateAnalytics],
+  ['cli.analyticsSharing.tracking', _validateAnalyticsSharingTracking],
+  ['cli.analyticsSharing.uuid', _validateAnalyticsSharingUuid],
 ]);
 
 /**
@@ -40,12 +84,12 @@ const validCliPaths = new Map([
  * by the path. For example, a path of "a[3].foo.bar[2]" would give you a fragment array of
  * ["a", 3, "foo", "bar", 2].
  * @param path The JSON string to parse.
- * @returns {string[]} The fragments for the string.
+ * @returns {(string|number)[]} The fragments for the string.
  * @private
  */
-function parseJsonPath(path: string): string[] {
+function parseJsonPath(path: string): (string | number)[] {
   const fragments = (path || '').split(/\./g);
-  const result: string[] = [];
+  const result: (string | number)[] = [];
 
   while (fragments.length > 0) {
     const fragment = fragments.shift();
@@ -60,12 +104,15 @@ function parseJsonPath(path: string): string[] {
 
     result.push(match[1]);
     if (match[2]) {
-      const indices = match[2].slice(1, -1).split('][');
+      const indices = match[2]
+        .slice(1, -1)
+        .split('][')
+        .map(x => (/^\d$/.test(x) ? +x : x.replace(/\"|\'/g, '')));
       result.push(...indices);
     }
   }
 
-  return result.filter(fragment => !!fragment);
+  return result.filter(fragment => fragment != null);
 }
 
 function getValueFromPath<T extends JsonArray | JsonObject>(
@@ -138,25 +185,7 @@ function setValueFromPath<T extends JsonArray | JsonObject>(
 function normalizeValue(value: ConfigCommandSchemaValue, path: string): JsonValue {
   const cliOptionType = validCliPaths.get(path);
   if (cliOptionType) {
-    switch (cliOptionType) {
-      case 'boolean':
-        if (('' + value).trim() === 'true') {
-          return true;
-        } else if (('' + value).trim() === 'false') {
-          return false;
-        }
-        break;
-      case 'number':
-        const numberValue = Number(value);
-        if (!Number.isFinite(numberValue)) {
-          return numberValue;
-        }
-        break;
-      case 'string':
-        return value;
-    }
-
-    throw new Error(`Invalid value type; expected a ${cliOptionType}.`);
+    return cliOptionType('' + value);
   }
 
   if (typeof value === 'string') {
@@ -182,14 +211,12 @@ export class ConfigCommand extends Command<ConfigCommandSchema> {
       await this.validateScope(CommandScope.InProject);
     }
 
-    let config =
-      (getWorkspace(level) as {} as { _workspace: experimental.workspace.WorkspaceSchema });
+    let config = await getWorkspace(level);
 
     if (options.global && !config) {
       try {
         if (migrateLegacyGlobalConfig()) {
-          config =
-            (getWorkspace(level) as {} as { _workspace: experimental.workspace.WorkspaceSchema });
+          config = await getWorkspace(level);
           this.logger.info(tags.oneLine`
             We found a global configuration that was used in Angular CLI 1.
             It has been automatically migrated.`);
@@ -204,7 +231,10 @@ export class ConfigCommand extends Command<ConfigCommandSchema> {
         return 1;
       }
 
-      return this.get(config._workspace, options);
+      const workspace = ((config as {}) as { _workspace: experimental.workspace.WorkspaceSchema })
+        ._workspace;
+
+      return this.get(workspace, options);
     } else {
       return this.set(options);
     }
@@ -213,7 +243,16 @@ export class ConfigCommand extends Command<ConfigCommandSchema> {
   private get(config: experimental.workspace.WorkspaceSchema, options: ConfigCommandSchema) {
     let value;
     if (options.jsonPath) {
-      value = getValueFromPath(config as {} as JsonObject, options.jsonPath);
+      if (options.jsonPath === 'cli.warnings.typescriptMismatch') {
+        // NOTE: Remove this in 9.0.
+        this.logger.warn('The "typescriptMismatch" warning has been removed in 8.0.');
+        // Since there is no actual warning, this value is always false.
+        this.logger.info('false');
+
+        return 0;
+      }
+
+      value = getValueFromPath((config as {}) as JsonObject, options.jsonPath);
     } else {
       value = config;
     }
@@ -231,13 +270,23 @@ export class ConfigCommand extends Command<ConfigCommandSchema> {
     return 0;
   }
 
-  private set(options: ConfigCommandSchema) {
+  private async set(options: ConfigCommandSchema) {
     if (!options.jsonPath || !options.jsonPath.trim()) {
       throw new Error('Invalid Path.');
     }
-    if (options.global
-        && !options.jsonPath.startsWith('schematics.')
-        && !validCliPaths.has(options.jsonPath)) {
+
+    if (options.jsonPath === 'cli.warnings.typescriptMismatch') {
+      // NOTE: Remove this in 9.0.
+      this.logger.warn('The "typescriptMismatch" warning has been removed in 8.0.');
+
+      return 0;
+    }
+
+    if (
+      options.global &&
+      !options.jsonPath.startsWith('schematics.') &&
+      !validCliPaths.has(options.jsonPath)
+    ) {
       throw new Error('Invalid Path.');
     }
 
@@ -261,7 +310,7 @@ export class ConfigCommand extends Command<ConfigCommandSchema> {
     }
 
     try {
-      validateWorkspace(configValue);
+      await validateWorkspace(configValue);
     } catch (error) {
       this.logger.fatal(error.message);
 
@@ -273,5 +322,4 @@ export class ConfigCommand extends Command<ConfigCommandSchema> {
 
     return 0;
   }
-
 }

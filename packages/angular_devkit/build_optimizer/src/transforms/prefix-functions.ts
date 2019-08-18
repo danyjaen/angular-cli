@@ -6,9 +6,7 @@
  * found in the LICENSE file at https://angular.io/license
  */
 import * as ts from 'typescript';
-
-
-const pureFunctionComment = '@__PURE__';
+import { addPureComment, hasPureComment, isHelperName } from '../helpers/ast-utils';
 
 export function getPrefixFunctionsTransformer(): ts.TransformerFactory<ts.SourceFile> {
   return (context: ts.TransformationContext): ts.Transformer<ts.SourceFile> => {
@@ -19,8 +17,7 @@ export function getPrefixFunctionsTransformer(): ts.TransformerFactory<ts.Source
       const visitor: ts.Visitor = (node: ts.Node): ts.Node => {
         // Add pure function comment to top level functions.
         if (topLevelFunctions.has(node)) {
-          const newNode = ts.addSyntheticLeadingComment(
-            node, ts.SyntaxKind.MultiLineCommentTrivia, pureFunctionComment, false);
+          const newNode = addPureComment(node);
 
           // Replace node with modified one.
           return ts.visitEachChild(newNode, visitor, context);
@@ -47,9 +44,8 @@ export function findTopLevelFunctions(parentNode: ts.Node): Set<ts.Node> {
     // need to mark function calls inside them as pure.
     // Class static initializers in ES2015 are an exception we don't cover. They would need similar
     // processing as enums to prevent property setting from causing the class to be retained.
-    if (ts.isFunctionDeclaration(node)
-      || ts.isFunctionExpression(node)
-      || ts.isClassDeclaration(node)
+    if (ts.isFunctionLike(node)
+      || ts.isClassLike(node)
       || ts.isArrowFunction(node)
       || ts.isMethodDeclaration(node)
     ) {
@@ -67,14 +63,28 @@ export function findTopLevelFunctions(parentNode: ts.Node): Set<ts.Node> {
       return;
     }
 
+    if ((ts.isFunctionExpression(innerNode) || ts.isArrowFunction(innerNode))
+      && ts.isParenthesizedExpression(node)) {
+        // pure functions can be wrapped in parentizes
+        // we should not add pure comments to this sort of syntax.
+        // example var foo = (() => x)
+      return;
+    }
+
     if (noPureComment) {
       if (ts.isNewExpression(innerNode)) {
         topLevelFunctions.add(node);
       } else if (ts.isCallExpression(innerNode)) {
         let expression: ts.Expression = innerNode.expression;
+
+        if (ts.isIdentifier(expression) && isHelperName(expression.text)) {
+          return;
+        }
+
         while (expression && ts.isParenthesizedExpression(expression)) {
           expression = expression.expression;
         }
+
         if (expression) {
           if (ts.isFunctionExpression(expression)) {
             // Skip IIFE's with arguments
@@ -95,13 +105,4 @@ export function findTopLevelFunctions(parentNode: ts.Node): Set<ts.Node> {
   ts.forEachChild(parentNode, cb);
 
   return topLevelFunctions;
-}
-
-function hasPureComment(node: ts.Node) {
-  if (!node) {
-    return false;
-  }
-  const leadingComment = ts.getSyntheticLeadingComments(node);
-
-  return leadingComment && leadingComment.some((comment) => comment.text === pureFunctionComment);
 }

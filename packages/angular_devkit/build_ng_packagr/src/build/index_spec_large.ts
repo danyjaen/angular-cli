@@ -5,47 +5,74 @@
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
+import { Architect } from '@angular-devkit/architect';
+import { WorkspaceNodeModulesArchitectHost } from '@angular-devkit/architect/node';
+import { TestProjectHost, TestingArchitectHost } from '@angular-devkit/architect/testing';
+import {
+  getSystemPath,
+  join,
+  normalize,
+  schema,
+  virtualFs,
+  workspaces,
+} from '@angular-devkit/core'; // tslint:disable-line:no-implicit-dependencies
+import { map, take, tap } from 'rxjs/operators';
 
-import { TargetSpecifier } from '@angular-devkit/architect';
-import { TestProjectHost, runTargetSpec } from '@angular-devkit/architect/testing';
-import { join, normalize, virtualFs } from '@angular-devkit/core';
-import { debounceTime, map, take, tap } from 'rxjs/operators';
+const ivyEnabled = process.argv.includes('--ivy');
 
-const devkitRoot = normalize((global as any)._DevKitRoot); // tslint:disable-line:no-any
-const workspaceRoot = join(devkitRoot, 'tests/angular_devkit/build_ng_packagr/ng-packaged/');
-export const host = new TestProjectHost(workspaceRoot);
+const devkitRoot = (global as unknown as { _DevKitRoot: string})._DevKitRoot;
+const workspaceRoot = join(
+  normalize(devkitRoot),
+  `tests/angular_devkit/build_ng_packagr/ng-packaged${ivyEnabled ? '-ivy' : ''}/`,
+);
 
 describe('NgPackagr Builder', () => {
-  beforeEach(done => host.initialize().toPromise().then(done, done.fail));
-  afterEach(done => host.restore().toPromise().then(done, done.fail));
+  const host = new TestProjectHost(workspaceRoot);
+  let architect: Architect;
 
-  it('works', (done) => {
-    const targetSpec: TargetSpecifier = { project: 'lib', target: 'build' };
+  beforeEach(async () => {
+    await host.initialize().toPromise();
 
-    runTargetSpec(host, targetSpec).pipe(
-      tap((buildEvent) => expect(buildEvent.success).toBe(true)),
-    ).toPromise().then(done, done.fail);
+    const registry = new schema.CoreSchemaRegistry();
+    registry.addPostTransform(schema.transforms.addUndefinedDefaults);
+
+    const workspaceSysPath = getSystemPath(host.root());
+    const { workspace } = await workspaces.readWorkspace(
+      workspaceSysPath,
+      workspaces.createWorkspaceHost(host),
+    );
+    const architectHost = new TestingArchitectHost(
+      workspaceSysPath,
+      workspaceSysPath,
+      new WorkspaceNodeModulesArchitectHost(workspace, workspaceSysPath),
+    );
+
+    architect = new Architect(architectHost, registry);
   });
 
-  it('tests works', (done) => {
-    const targetSpec: TargetSpecifier = { project: 'lib', target: 'test' };
+  afterEach(() => host.restore().toPromise());
 
-    runTargetSpec(host, targetSpec).pipe(
-      tap((buildEvent) => expect(buildEvent.success).toBe(true)),
-    ).toPromise().then(done, done.fail);
+  it('builds and packages a library', async () => {
+    const run = await architect.scheduleTarget({ project: 'lib', target: 'build' });
+
+    await expectAsync(run.result).toBeResolvedTo(jasmine.objectContaining({ success: true }));
+
+    await run.stop();
+
+    expect(host.scopedSync().exists(normalize('./dist/lib/fesm5/lib.js'))).toBe(true);
+    const content = virtualFs.fileBufferToString(
+      host.scopedSync().read(normalize('./dist/lib/fesm5/lib.js')),
+    );
+    expect(content).toContain('lib works');
+
+    if (ivyEnabled) {
+      expect(content).toContain('ngComponentDef');
+    } else {
+      expect(content).not.toContain('ngComponentDef');
+    }
   });
 
-  it('lint works', (done) => {
-    const targetSpec: TargetSpecifier = { project: 'lib', target: 'lint' };
-
-    runTargetSpec(host, targetSpec).pipe(
-      tap((buildEvent) => expect(buildEvent.success).toBe(true)),
-    ).toPromise().then(done, done.fail);
-  });
-
-  it('rebuilds on TS file changes', (done) => {
-    const targetSpec: TargetSpecifier = { project: 'lib', target: 'build' };
-
+  it('rebuilds on TS file changes', async () => {
     const goldenValueFiles: { [path: string]: string } = {
       'projects/lib/src/lib/lib.component.ts': `
       import { Component } from '@angular/core';
@@ -58,16 +85,14 @@ describe('NgPackagr Builder', () => {
       `,
     };
 
-    const overrides = { watch: true };
+    const run = await architect.scheduleTarget(
+      { project: 'lib', target: 'build' },
+      { watch: true },
+    );
 
     let buildNumber = 0;
 
-    runTargetSpec(host, targetSpec, overrides)
-    .pipe(
-      // We must debounce on watch mode because file watchers are not very accurate.
-      // Changes from just before a process runs can be picked up and cause rebuilds.
-      // In this case, cleanup from the test right before this one causes a few rebuilds.
-      debounceTime(1000),
+    await run.output.pipe(
       tap((buildEvent) => expect(buildEvent.success).toBe(true)),
       map(() => {
         const fileName = './dist/lib/fesm5/lib.js';
@@ -93,8 +118,8 @@ describe('NgPackagr Builder', () => {
         }
       }),
       take(2),
-    )
-    .toPromise()
-    .then(done, done.fail);
+    ).toPromise();
+
+    await run.stop();
   });
 });

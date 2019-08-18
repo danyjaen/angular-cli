@@ -17,10 +17,16 @@ export interface PublishArgs {
   tag?: string;
   branchCheck?: boolean;
   versionCheck?: boolean;
+  registry?: string;
 }
 
 
 function _exec(command: string, args: string[], opts: { cwd?: string }, logger: logging.Logger) {
+  if (process.platform.startsWith('win')) {
+    args.unshift('/c', command);
+    command = 'cmd.exe';
+  }
+
   const { status, error, stderr, stdout } = spawnSync(command, args, { ...opts });
 
   if (status != 0) {
@@ -72,6 +78,15 @@ function _versionCheck(args: PublishArgs, logger: logging.Logger) {
       Use --versionCheck=false to skip this check.
     `);
   }
+
+  Object.keys(packages).forEach((name: string) => {
+    if (packages[name].version.indexOf('+') >= 0) {
+      throw new Error(tags.oneLine`
+        Releasing a version with a + in it means that the latest commit is not tagged properly.
+        Version found: ${JSON.stringify(packages[name].version)}
+      `);
+    }
+  });
 }
 
 export default async function (args: PublishArgs, logger: logging.Logger) {
@@ -97,7 +112,15 @@ export default async function (args: PublishArgs, logger: logging.Logger) {
       .then(() => {
         logger.info(name);
 
-        return _exec('npm', ['publish'].concat(args.tag ? ['--tag', args.tag] : []), {
+        const publishArgs = ['publish'];
+        if (args.tag) {
+          publishArgs.push('--tag', args.tag);
+        }
+        if (args.registry) {
+          publishArgs.push('--registry', args.registry);
+        }
+
+        return _exec('npm', publishArgs, {
           cwd: pkg.dist,
         }, logger);
       })

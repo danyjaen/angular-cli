@@ -37,9 +37,9 @@ export interface BrowserBuilderBaseOptions {
     outputPath?: string;
     index?: string;
     polyfills: string;
-    assets?: object[];
-    styles?: string[];
-    scripts?: string[];
+    assets?: (object|string)[];
+    styles?: (object|string)[];
+    scripts?: (object|string)[];
     sourceMap?: boolean;
 }
 
@@ -47,17 +47,21 @@ export interface BrowserBuilderOptions extends BrowserBuilderBaseOptions {
     serviceWorker?: boolean;
     optimization?: boolean;
     outputHashing?: 'all';
+    resourcesOutputPath?: string;
     extractCss?: boolean;
     namedChunks?: boolean;
     aot?: boolean;
     extractLicenses?: boolean;
     vendorChunk?: boolean;
     buildOptimizer?: boolean;
+    ngswConfigPath?: string;
     budgets?: {
         type: string;
         maximumWarning?: string;
         maximumError?: string;
     }[];
+    es5BrowserSupport?: boolean;
+    webWorkerTsConfig?: string;
 }
 
 export interface ServeBuilderOptions {
@@ -73,6 +77,11 @@ export interface ServerBuilderOptions {
     tsConfig: string;
     main: string;
     fileReplacements?: FileReplacements[];
+    optimization?: {
+        scripts?: boolean;
+        styles?: boolean;
+    };
+    sourceMap?: boolean;
 }
 
 export interface AppShellBuilderOptions {

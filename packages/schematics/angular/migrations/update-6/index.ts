@@ -145,12 +145,6 @@ function extractCliConfig(config: CliConfig): JsonObject | null {
         ...{ versionMismatch: config.warnings.versionMismatch },
       };
     }
-    if (config.warnings.typescriptMismatch !== undefined) {
-      newConfig.warnings = {
-        ...((newConfig.warnings as JsonObject | null) || {}),
-        ...{ typescriptMismatch: config.warnings.typescriptMismatch },
-      };
-    }
   }
 
   return Object.getOwnPropertyNames(newConfig).length == 0 ? null : newConfig;
@@ -562,7 +556,6 @@ function extractProjectsConfig(
 
       const e2eTargets: JsonObject = {};
 
-      // tslint:disable-next-line:max-line-length
       const protractorConfig = config && config.e2e && config.e2e.protractor && config.e2e.protractor.config
         ? config.e2e.protractor.config
         : '';

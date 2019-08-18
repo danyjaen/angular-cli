@@ -9,11 +9,17 @@
 // tslint:disable-next-line:no-implicit-dependencies
 import { tags } from '@angular-devkit/core';
 import { transformJavascript } from '../helpers/transform-javascript';
-import { getScrubFileTransformer, testScrubFile } from './scrub-file';
+import {
+  getScrubFileTransformer,
+  getScrubFileTransformerForCore,
+  testScrubFile,
+} from './scrub-file';
 
 
 const transform = (content: string) => transformJavascript(
   { content, getTransforms: [getScrubFileTransformer], typeCheck: true }).content;
+const transformCore = (content: string) => transformJavascript(
+  { content, getTransforms: [getScrubFileTransformerForCore], typeCheck: true }).content;
 
 describe('scrub-file', () => {
   const clazz = 'var Clazz = (function () { function Clazz() { } return Clazz; }());';
@@ -182,23 +188,6 @@ describe('scrub-file', () => {
       expect(tags.oneLine`${transform(input)}`).toEqual(tags.oneLine`${output}`);
     });
 
-    it('doesn\t remove constructor parameter metadata for whitelisted classes', () => {
-      const input = tags.stripIndent`
-        import { ElementRef } from '@angular/core';
-        import { LibService } from 'another-lib';
-        var BrowserPlatformLocation = (function () {
-          function BrowserPlatformLocation() { }
-          BrowserPlatformLocation = __decorate([
-            __metadata("design:paramtypes", [ElementRef, LibService])
-          ], BrowserPlatformLocation);
-          return BrowserPlatformLocation;
-        }());
-      `;
-
-      expect(testScrubFile(input)).toBeTruthy();
-      expect(tags.oneLine`${transform(input)}`).toEqual(tags.oneLine`${input}`);
-    });
-
     it('removes only Angular decorators calls in __decorate', () => {
       const output = tags.stripIndent`
         import { Component } from '@angular/core';
@@ -288,6 +277,47 @@ describe('scrub-file', () => {
 
       expect(testScrubFile(input)).toBeTruthy();
       expect(tags.oneLine`${transform(input)}`).toEqual(tags.oneLine`${output}`);
+    });
+
+    it('recognizes decorator imports in Angular core', () => {
+      const input = tags.stripIndent`
+        import * as tslib_1 from "tslib";
+        import { Injectable } from './di';
+        var Console = /** @class */ (function () {
+            function Console() {
+            }
+            Console.prototype.log = function (message) {
+                console.log(message);
+            };
+            Console.prototype.warn = function (message) {
+                console.warn(message);
+            };
+            Console = tslib_1.__decorate([
+                Injectable()
+            ], Console);
+            return Console;
+        }());
+        export { Console };
+      `;
+      const output = tags.stripIndent`
+        import * as tslib_1 from "tslib";
+        import { Injectable } from './di';
+        var Console = /** @class */ (function () {
+            function Console() {
+            }
+            Console.prototype.log = function (message) {
+                console.log(message);
+            };
+            Console.prototype.warn = function (message) {
+                console.warn(message);
+            };
+            return Console;
+        }());
+        export { Console };
+      `;
+
+      expect(testScrubFile(input)).toBeTruthy();
+      expect(tags.oneLine`${transformCore(input)}`).toEqual(tags.oneLine`${output}`);
     });
   });
 
@@ -580,15 +610,6 @@ describe('scrub-file', () => {
       `;
 
       expect(tags.oneLine`${transform(input)}`).toEqual(tags.oneLine`${output}`);
-    });
-
-    it('doesn\'t remove constructor parameters from whitelisted classes', () => {
-      const input = tags.stripIndent`
-        ${clazz.replace('Clazz', 'PlatformRef_')}
-        PlatformRef_.ctorParameters = function () { return []; };
-      `;
-
-      expect(tags.oneLine`${transform(input)}`).toEqual(tags.oneLine`${input}`);
     });
   });
 });

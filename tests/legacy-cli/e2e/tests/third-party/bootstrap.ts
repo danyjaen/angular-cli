@@ -22,11 +22,7 @@ export default function() {
     .then(() => expectFileToMatch('dist/test-project/scripts.js', '* Bootstrap'))
     .then(() => expectFileToMatch('dist/test-project/styles.css', '* Bootstrap'))
     .then(() => expectFileToMatch('dist/test-project/index.html', oneLineTrim`
-      <script type="text/javascript" src="runtime.js"></script>
-      <script type="text/javascript" src="polyfills.js"></script>
-      <script type="text/javascript" src="scripts.js"></script>
-      <script type="text/javascript" src="vendor.js"></script>
-      <script type="text/javascript" src="main.js"></script>
+      <script src="scripts.js" defer></script>
     `))
     .then(() => ng(
       'build',
@@ -38,9 +34,6 @@ export default function() {
     .then(() => expectFileToMatch('dist/test-project/scripts.js', 'jQuery'))
     .then(() => expectFileToMatch('dist/test-project/styles.css', '* Bootstrap'))
     .then(() => expectFileToMatch('dist/test-project/index.html', oneLineTrim`
-      <script type="text/javascript" src="runtime.js"></script>
-      <script type="text/javascript" src="polyfills.js"></script>
-      <script type="text/javascript" src="scripts.js"></script>
-      <script type="text/javascript" src="main.js"></script>
+    <script src="scripts.js" defer></script>
     `));
 }

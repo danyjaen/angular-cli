@@ -25,9 +25,11 @@ export function calculateSizes(budget: Budget, compilation: Compilation): Size[]
     allScript: AllScriptCalculator,
     any: AnyCalculator,
     anyScript: AnyScriptCalculator,
+    anyComponentStyle: AnyComponentStyleCalculator,
     bundle: BundleCalculator,
     initial: InitialCalculator,
   };
+
   const ctor = calculatorMap[budget.type];
   const calculator = new ctor(budget, compilation);
 
@@ -48,6 +50,7 @@ class BundleCalculator extends Calculator {
     const size: number = this.compilation.chunks
       .filter(chunk => chunk.name === this.budget.name)
       .reduce((files, chunk) => [...files, ...chunk.files], [])
+      .filter((file: string) => !file.endsWith('.map'))
       .map((file: string) => this.compilation.assets[file].size())
       .reduce((total: number, size: number) => total + size, 0);
 
@@ -97,6 +100,20 @@ class AllCalculator extends Calculator {
       .reduce((total: number, size: number) => total + size, 0);
 
     return [{size, label: 'total'}];
+  }
+}
+
+/**
+ * Any components styles
+ */
+class AnyComponentStyleCalculator extends Calculator {
+  calculate() {
+    return Object.keys(this.compilation.assets)
+      .filter(key => key.endsWith('.css'))
+      .map(key => ({
+        size: this.compilation.assets[key].size(),
+        label: key,
+      }));
   }
 }
 
@@ -154,7 +171,7 @@ export function calculateBytes(
   let value = Number(matches[1]);
   switch (matches[2] && matches[2].toLowerCase()) {
     case '%':
-      value = baselineBytes * value / 100 * factor;
+      value = baselineBytes * value / 100;
       break;
     case 'kb':
       value *= 1024;
@@ -167,5 +184,9 @@ export function calculateBytes(
       break;
   }
 
-  return value + baselineBytes;
+  if (baselineBytes === 0) {
+    return value;
+  }
+
+  return baselineBytes + value * factor;
 }

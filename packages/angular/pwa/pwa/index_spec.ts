@@ -9,8 +9,6 @@ import { SchematicTestRunner, UnitTestTree } from '@angular-devkit/schematics/te
 import * as path from 'path';
 import { Schema as PwaOptions } from './schema';
 
-
-// tslint:disable:max-line-length
 describe('PWA Schematic', () => {
   const schematicRunner = new SchematicTestRunner(
     '@angular/pwa',
@@ -42,9 +40,14 @@ describe('PWA Schematic', () => {
     skipTests: false,
   };
 
-  beforeEach(() => {
-    appTree = schematicRunner.runExternalSchematic('@schematics/angular', 'workspace', workspaceOptions);
-    appTree = schematicRunner.runExternalSchematic('@schematics/angular', 'application', appOptions, appTree);
+  beforeEach(async () => {
+    appTree = await schematicRunner.runExternalSchematicAsync('@schematics/angular', 'workspace', workspaceOptions).toPromise();
+    appTree = await schematicRunner.runExternalSchematicAsync(
+      '@schematics/angular',
+      'application',
+      appOptions,
+      appTree,
+    ).toPromise();
   });
 
   it('should run the service worker schematic', (done) => {
@@ -71,14 +74,14 @@ describe('PWA Schematic', () => {
 
   it('should create a manifest file', (done) => {
     schematicRunner.runSchematicAsync('ng-add', defaultOptions, appTree).toPromise().then(tree => {
-      expect(tree.exists('/projects/bar/src/manifest.json')).toEqual(true);
+      expect(tree.exists('/projects/bar/src/manifest.webmanifest')).toEqual(true);
       done();
     }, done.fail);
   });
 
   it('should set the name & short_name in the manifest file', (done) => {
     schematicRunner.runSchematicAsync('ng-add', defaultOptions, appTree).toPromise().then(tree => {
-      const manifestText = tree.readContent('/projects/bar/src/manifest.json');
+      const manifestText = tree.readContent('/projects/bar/src/manifest.webmanifest');
       const manifest = JSON.parse(manifestText);
 
       expect(manifest.name).toEqual(defaultOptions.title);
@@ -90,7 +93,7 @@ describe('PWA Schematic', () => {
   it('should set the name & short_name in the manifest file when no title provided', (done) => {
     const options = {...defaultOptions, title: undefined};
     schematicRunner.runSchematicAsync('ng-add', options, appTree).toPromise().then(tree => {
-      const manifestText = tree.readContent('/projects/bar/src/manifest.json');
+      const manifestText = tree.readContent('/projects/bar/src/manifest.webmanifest');
       const manifest = JSON.parse(manifestText);
 
       expect(manifest.name).toEqual(defaultOptions.project);
@@ -103,7 +106,7 @@ describe('PWA Schematic', () => {
     schematicRunner.runSchematicAsync('ng-add', defaultOptions, appTree).toPromise().then(tree => {
       const content = tree.readContent('projects/bar/src/index.html');
 
-      expect(content).toMatch(/<link rel="manifest" href="manifest.json">/);
+      expect(content).toMatch(/<link rel="manifest" href="manifest.webmanifest">/);
       expect(content).toMatch(/<meta name="theme-color" content="#1976d2">/);
       expect(content)
         .toMatch(/<noscript>Please enable JavaScript to continue using this application.<\/noscript>/);
@@ -118,7 +121,7 @@ describe('PWA Schematic', () => {
     schematicRunner.runSchematicAsync('ng-add', defaultOptions, appTree).toPromise().then(tree => {
       const content = tree.readContent('projects/bar/src/index.html');
 
-      expect(content).toMatch(/<link rel="manifest" href="manifest.json">/);
+      expect(content).toMatch(/<link rel="manifest" href="manifest.webmanifest">/);
       expect(content).toMatch(/<meta name="theme-color" content="#1976d2">/);
       expect(content).not
         .toMatch(/<noscript>Please enable JavaScript to continue using this application.<\/noscript>/);
@@ -134,7 +137,7 @@ describe('PWA Schematic', () => {
       const targets = config.projects.bar.architect;
 
       ['build', 'test'].forEach((target) => {
-        expect(targets[target].options.assets).toContain('projects/bar/src/manifest.json');
+        expect(targets[target].options.assets).toContain('projects/bar/src/manifest.webmanifest');
       });
       done();
     }, done.fail);

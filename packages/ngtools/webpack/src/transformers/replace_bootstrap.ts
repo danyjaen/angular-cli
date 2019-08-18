@@ -7,6 +7,7 @@
  */
 import { dirname, relative } from 'path';
 import * as ts from 'typescript';
+import { forwardSlashPath } from '../utils';
 import { collectDeepNodes } from './ast_helpers';
 import { insertStarImport } from './insert_import';
 import { ReplaceNodeOperation, StandardTransform, TransformOperation } from './interfaces';
@@ -15,14 +16,31 @@ import { makeTransform } from './make_transform';
 
 export function replaceBootstrap(
   shouldTransform: (fileName: string) => boolean,
-  getEntryModule: () => { path: string, className: string } | null,
+  getEntryModules: () => { path: string, className: string }[] | null,
   getTypeChecker: () => ts.TypeChecker,
+  useFactories = true,
 ): ts.TransformerFactory<ts.SourceFile> {
 
+
   const standardTransform: StandardTransform = function (sourceFile: ts.SourceFile) {
+
     const ops: TransformOperation[] = [];
 
-    const entryModule = getEntryModule();
+    const entryModules = getEntryModules();
+
+    if (!shouldTransform(sourceFile.fileName) || !entryModules) {
+      return ops;
+    }
+
+    return entryModules.reduce((ops, entryModule) => {
+      return ops.concat(standardTransformHelper(sourceFile, entryModule));
+    }, ops);
+  };
+
+  const standardTransformHelper = function (
+    sourceFile: ts.SourceFile,
+    entryModule: { path: string, className: string }) {
+    const ops: TransformOperation[] = [];
 
     if (!shouldTransform(sourceFile.fileName) || !entryModule) {
       return ops;
@@ -36,9 +54,6 @@ export function replaceBootstrap(
     if (entryModuleIdentifiers.length === 0) {
       return [];
     }
-
-    const relativeEntryModulePath = relative(dirname(sourceFile.fileName), entryModule.path);
-    const normalizedEntryModulePath = `./${relativeEntryModulePath}`.replace(/\\/g, '/');
 
     // Find the bootstrap calls.
     entryModuleIdentifiers.forEach(entryModuleIdentifier => {
@@ -79,19 +94,28 @@ export function replaceBootstrap(
       const idNgFactory = ts.createUniqueName('__NgCli_bootstrap_');
 
       // Add the transform operations.
-      const factoryClassName = entryModule.className + 'NgFactory';
-      const factoryModulePath = normalizedEntryModulePath + '.ngfactory';
+      const relativeEntryModulePath = relative(dirname(sourceFile.fileName), entryModule.path);
+      let className = entryModule.className;
+      let modulePath = forwardSlashPath(`./${relativeEntryModulePath}`);
+      let bootstrapIdentifier = 'bootstrapModule';
+
+      if (useFactories) {
+        className += 'NgFactory';
+        modulePath += '.ngfactory';
+        bootstrapIdentifier = 'bootstrapModuleFactory';
+      }
+
       ops.push(
         // Replace the entry module import.
-        ...insertStarImport(sourceFile, idNgFactory, factoryModulePath),
+        ...insertStarImport(sourceFile, idNgFactory, modulePath),
         new ReplaceNodeOperation(sourceFile, entryModuleIdentifier,
-          ts.createPropertyAccess(idNgFactory, ts.createIdentifier(factoryClassName))),
+          ts.createPropertyAccess(idNgFactory, ts.createIdentifier(className))),
         // Replace the platformBrowserDynamic import.
         ...insertStarImport(sourceFile, idPlatformBrowser, '@angular/platform-browser'),
         new ReplaceNodeOperation(sourceFile, platformBrowserDynamicIdentifier,
           ts.createPropertyAccess(idPlatformBrowser, 'platformBrowser')),
         new ReplaceNodeOperation(sourceFile, bootstrapModuleIdentifier,
-          ts.createIdentifier('bootstrapModuleFactory')),
+          ts.createIdentifier(bootstrapIdentifier)),
       );
     });
 
