@@ -27,6 +27,7 @@ export class WebpackResourceLoader {
   private _parentCompilation: any;
   private _context: string;
   private _fileDependencies = new Map<string, string[]>();
+  private _reverseDependencies = new Map<string, string[]>();
   private _cachedSources = new Map<string, string>();
   private _cachedEvaluatedSources = new Map<string, RawSource>();
 
@@ -39,6 +40,10 @@ export class WebpackResourceLoader {
 
   getResourceDependencies(filePath: string) {
     return this._fileDependencies.get(filePath) || [];
+  }
+
+  getAffectedResources(file: string) {
+    return this._reverseDependencies.get(file) || [];
   }
 
   private _compile(filePath: string): Promise<CompilationOutput> {
@@ -94,14 +99,27 @@ export class WebpackResourceLoader {
     // Compile and return a promise
     return new Promise((resolve, reject) => {
       childCompiler.compile((err: Error, childCompilation: any) => {
-        // Resolve / reject the promise
-        if (childCompilation && childCompilation.errors && childCompilation.errors.length) {
-          const errorDetails = childCompilation.errors.map(function (error: any) {
-            return error.message + (error.error ? ':\n' + error.error : '');
-          }).join('\n');
-          reject(new Error('Child compilation failed:\n' + errorDetails));
-        } else if (err) {
+        if (err) {
           reject(err);
+
+          return;
+        }
+
+        // Resolve / reject the promise
+        const { warnings, errors } = childCompilation;
+
+        if (warnings && warnings.length) {
+          this._parentCompilation.warnings.push(...warnings);
+        }
+
+        if (errors && errors.length) {
+          this._parentCompilation.errors.push(...errors);
+
+          const errorDetails = errors
+            .map((error: any) => error.message + (error.error ? ':\n' + error.error : ''))
+            .join('\n');
+
+          reject(new Error('Child compilation failed:\n' + errorDetails));
         } else {
           Object.keys(childCompilation.assets).forEach(assetName => {
             // Add all new assets to the parent compilation, with the exception of
@@ -117,6 +135,14 @@ export class WebpackResourceLoader {
 
           // Save the dependencies for this resource.
           this._fileDependencies.set(filePath, childCompilation.fileDependencies);
+          for (const file of childCompilation.fileDependencies) {
+            const entry = this._reverseDependencies.get(file);
+            if (entry) {
+              entry.push(filePath);
+            } else {
+              this._reverseDependencies.set(file, [filePath]);
+            }
+          }
 
           const compilationHash = childCompilation.fullHash;
           const maybeSource = this._cachedSources.get(compilationHash);
@@ -133,19 +159,18 @@ export class WebpackResourceLoader {
     });
   }
 
-  private _evaluate({ outputName, source }: CompilationOutput): Promise<string> {
-    try {
+  private async _evaluate({ outputName, source }: CompilationOutput): Promise<string> {
       // Evaluate code
       const evaluatedSource = vm.runInNewContext(source, undefined, { filename: outputName });
-
-      if (typeof evaluatedSource == 'string') {
-        return Promise.resolve(evaluatedSource);
+      if (typeof evaluatedSource === 'object' && typeof evaluatedSource.default === 'string') {
+        return evaluatedSource.default;
       }
 
-      return Promise.reject('The loader "' + outputName + '" didn\'t return a string.');
-    } catch (e) {
-      return Promise.reject(e);
-    }
+      if (typeof evaluatedSource === 'string') {
+        return evaluatedSource;
+      }
+
+      throw new Error(`The loader "${outputName}" didn't return a string.`);
   }
 
   get(filePath: string): Promise<string> {

@@ -16,11 +16,10 @@ import { buildOptimizer } from './build-optimizer';
 describe('build-optimizer', () => {
   const imports = 'import { Injectable, Input, Component } from \'@angular/core\';';
   const clazz = 'var Clazz = (function () { function Clazz() { } return Clazz; }());';
-  const staticProperty = 'Clazz.prop = 1;';
   const decorators = 'Clazz.decorators = [ { type: Injectable } ];';
 
   describe('basic functionality', () => {
-    it('applies class-fold, scrub-file and prefix-functions to side-effect free modules', () => {
+    it('applies scrub-file and prefix-functions to side-effect free modules', () => {
       const input = tags.stripIndent`
         ${imports}
         var __extends = (this && this.__extends) || function (d, b) {
@@ -34,7 +33,6 @@ describe('build-optimizer', () => {
           ChangeDetectionStrategy[ChangeDetectionStrategy["Default"] = 1] = "Default";
         })(ChangeDetectionStrategy || (ChangeDetectionStrategy = {}));
         ${clazz}
-        ${staticProperty}
         ${decorators}
         Clazz.propDecorators = { 'ngIf': [{ type: Input }] };
         Clazz.ctorParameters = function () { return [{type: Injectable}]; };
@@ -56,7 +54,6 @@ describe('build-optimizer', () => {
         }());
         var RenderType_MdOption = ɵcrt({ encapsulation: 2, styles: styles_MdOption});
       `;
-      // tslint:disable:max-line-length
       const output = tags.oneLine`
         import { __extends } from "tslib";
         ${imports}
@@ -65,7 +62,7 @@ describe('build-optimizer', () => {
           ChangeDetectionStrategy[ChangeDetectionStrategy["Default"] = 1] = "Default";
           return ChangeDetectionStrategy;
         })({});
-        var Clazz = /*@__PURE__*/ (function () { function Clazz() { } ${staticProperty} return Clazz; }());
+        var Clazz = /*@__PURE__*/ (function () { function Clazz() { } return Clazz; }());
         var ComponentClazz = /*@__PURE__*/ (function () {
           function ComponentClazz() { }
           return ComponentClazz;
@@ -100,6 +97,73 @@ describe('build-optimizer', () => {
 
       const boOutput = buildOptimizer({ content: input, isSideEffectFree: true });
       expect(tags.oneLine`${boOutput.content}`).toEqual(output);
+      expect(boOutput.emitSkipped).toEqual(false);
+    });
+
+    it(`doesn't add pure comments to tslib helpers`, () => {
+      const input = tags.stripIndent`
+        class LanguageState {
+        }
+
+        LanguageState.ctorParameters = () => [
+            { type: TranslateService },
+            { type: undefined, decorators: [{ type: Inject, args: [LANGUAGE_CONFIG,] }] }
+        ];
+
+        __decorate([
+            Action(CheckLanguage),
+            __metadata("design:type", Function),
+            __metadata("design:paramtypes", [Object]),
+            __metadata("design:returntype", void 0)
+        ], LanguageState.prototype, "checkLanguage", null);
+      `;
+
+      const output = tags.oneLine`
+        let LanguageState = /*@__PURE__*/ (() => {
+          class LanguageState {
+          }
+
+          __decorate([
+              Action(CheckLanguage),
+              __metadata("design:type", Function),
+              __metadata("design:paramtypes", [Object]),
+              __metadata("design:returntype", void 0)
+          ], LanguageState.prototype, "checkLanguage", null);
+          return LanguageState;
+       })();
+      `;
+
+      const boOutput = buildOptimizer({ content: input, isSideEffectFree: true });
+      expect(tags.oneLine`${boOutput.content}`).toEqual(output);
+      expect(boOutput.emitSkipped).toEqual(false);
+    });
+
+    it('should not wrap classes which had all static properties dropped in IIFE', () => {
+      const classDeclaration = tags.oneLine`
+        import { Injectable } from '@angular/core';
+
+        class Platform {
+          constructor(_doc) {
+          }
+          init() {
+          }
+        }
+      `;
+      const input = tags.oneLine`
+        ${classDeclaration}
+
+        Platform.decorators = [
+            { type: Injectable }
+        ];
+
+        /** @nocollapse */
+        Platform.ctorParameters = () => [
+            { type: undefined, decorators: [{ type: Inject, args: [DOCUMENT] }] }
+        ];
+      `;
+
+      const boOutput = buildOptimizer({ content: input, isSideEffectFree: true });
+      expect(tags.oneLine`${boOutput.content}`).toEqual(classDeclaration);
       expect(boOutput.emitSkipped).toEqual(false);
     });
   });
@@ -202,7 +266,6 @@ describe('build-optimizer', () => {
     xit('doesn\'t produce sourcemaps when emitting was skipped', () => {
       const ignoredInput = tags.oneLine`
         var Clazz = (function () { function Clazz() { } return Clazz; }());
-        ${staticProperty}
       `;
       const invalidInput = tags.oneLine`
         ))))invalid syntax

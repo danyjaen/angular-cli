@@ -5,7 +5,7 @@
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
-import { logging } from '@angular-devkit/core';
+import { logging, tags } from '@angular-devkit/core';
 import {
   Rule,
   SchematicContext,
@@ -214,7 +214,10 @@ function _validateUpdatePackages(
   });
 
   if (!force && peerErrors) {
-    throw new SchematicsException(`Incompatible peer dependencies found. See above.`);
+    throw new SchematicsException(tags.stripIndents
+      `Incompatible peer dependencies found.
+      Peer dependency warnings when installing dependencies means that those dependencies might not work correctly together.
+      You can use the '--force' option to ignore incompatible peer dependencies and instead address these warnings later.`);
   }
 }
 
@@ -503,10 +506,6 @@ function _usageMessage(
     logger.info('  ' + fields.map((x, i) => x.padEnd(pads[i])).join(''));
   });
 
-  logger.info('\n');
-  logger.info('There might be additional packages that are outdated.');
-  logger.info('Run "ng update --all" to try to update all at the same time.\n');
-
   return of<void>(undefined);
 }
 
@@ -528,7 +527,7 @@ function _buildPackageInfo(
 
   // Find out the currently installed version. Either from the package.json or the node_modules/
   // TODO: figure out a way to read package-lock.json and/or yarn.lock.
-  let installedVersion: string | undefined;
+  let installedVersion: string | undefined | null;
   const packageContent = tree.read(`/node_modules/${name}/package.json`);
   if (packageContent) {
     const content = JSON.parse(packageContent.toString()) as JsonSchemaForNpmPackageJsonFiles;
@@ -539,6 +538,12 @@ function _buildPackageInfo(
     installedVersion = semver.maxSatisfying(
       Object.keys(npmPackageJson.versions),
       packageJsonRange,
+    );
+  }
+
+  if (!installedVersion) {
+    throw new SchematicsException(
+      `An unexpected error happened; could not determine version for package ${name}.`,
     );
   }
 

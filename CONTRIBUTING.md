@@ -71,7 +71,7 @@ We will be insisting on a minimal reproduce scenario in order to save maintainer
 
 Unfortunately we are not able to investigate / fix bugs without a minimal reproduction, so if we don't hear back from you we are going to close an issue that don't have enough info to be reproduced.
 
-You can file new issues by filling out our [new issue form](https://github.com/angular/angular-cli/issues/new).
+You can file new issues by selecting from our [new issue templates](https://github.com/angular/angular-cli/issues/new/choose) and filling out the issue template.
 
 
 ### <a name="submit-pr"></a> Submitting a Pull Request (PR)
@@ -106,7 +106,7 @@ Before you submit your Pull Request (PR) consider the following guidelines:
     git push origin my-fix-branch
     ```
 
-* In GitHub, send a pull request to `devkit:master`.
+* In GitHub, send a pull request to `angular/angular-cli:master`.
 * If we suggest changes then:
   * Make the required updates.
   * Re-run the Angular DevKit test suites to ensure tests are still passing.
@@ -284,18 +284,18 @@ To test if your change effect the public API you need to run the API guardian on
 For example in case `@angular-devkit/core` package was modified you need to run:
 
 ```bash
-bazel test //etc/api:angular_devkit_core_api
+yarn bazel test //etc/api:angular_devkit_core_api
 ```
 
 You can also test all packages by running:
 ```bash
-bazel test //etc/api ...
+yarn bazel test //etc/api ...
 ```
 
 If you modified the public API, the test will fail. To update the golden files you need to run:
 
 ```bash
-bazel run //etc/api:angular_devkit_core_api.accept
+yarn bazel run //etc/api:angular_devkit_core_api.accept
 ```
 
 **Note**: In some cases we use aliased symbols to create namespaces.

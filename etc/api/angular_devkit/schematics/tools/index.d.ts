@@ -10,6 +10,8 @@ export declare class CollectionMissingSchematicsMapException extends BaseExcepti
     constructor(name: string);
 }
 
+export declare type ContextTransform = (context: FileSystemSchematicContext) => FileSystemSchematicContext;
+
 export declare class ExportStringRef<T> {
     readonly module: string;
     readonly path: string;
@@ -26,12 +28,15 @@ export declare type FileSystemCollection = Collection<FileSystemCollectionDescri
 export declare type FileSystemCollectionDesc = CollectionDescription<FileSystemCollectionDescription>;
 
 export interface FileSystemCollectionDescription {
+    readonly name: string;
     readonly path: string;
     readonly schematics: {
         [name: string]: FileSystemSchematicDesc;
     };
     readonly version?: string;
 }
+
+export declare type FileSystemEngine = Engine<FileSystemCollectionDescription, FileSystemSchematicDescription>;
 
 export declare class FileSystemEngineHost extends FileSystemEngineHostBase {
     protected _root: string;
@@ -47,7 +52,7 @@ export declare class FileSystemEngineHost extends FileSystemEngineHostBase {
     hasTaskExecutor(name: string): boolean;
 }
 
-export declare abstract class FileSystemEngineHostBase implements EngineHost<FileSystemCollectionDescription, FileSystemSchematicDescription> {
+export declare abstract class FileSystemEngineHostBase implements FileSystemEngineHost {
     protected abstract _resolveCollectionPath(name: string): string;
     protected abstract _resolveReferenceString(name: string, parentPath: string): {
         ref: RuleFactory<{}>;
@@ -63,6 +68,7 @@ export declare abstract class FileSystemEngineHostBase implements EngineHost<Fil
     hasTaskExecutor(name: string): boolean;
     listSchematicNames(collection: FileSystemCollectionDesc): string[];
     listSchematics(collection: FileSystemCollection): string[];
+    registerContextTransform(t: ContextTransform): void;
     registerOptionsTransform<T extends object, R extends object>(t: OptionTransform<T, R>): void;
     registerTaskExecutor<T>(factory: TaskExecutorFactory<T>, options?: T): void;
     transformContext(context: FileSystemSchematicContext): FileSystemSchematicContext;
@@ -87,9 +93,11 @@ export interface FileSystemSchematicDescription extends FileSystemSchematicJsonD
 
 export interface FileSystemSchematicJsonDescription {
     readonly aliases?: string[];
+    readonly collection: FileSystemCollectionDescription;
     readonly description: string;
     readonly extends?: string;
     readonly factory: string;
+    readonly name: string;
     readonly schema?: string;
 }
 
@@ -123,15 +131,18 @@ export declare class NodePackageDoesNotSupportSchematics extends BaseException {
 }
 
 export declare class NodeWorkflow extends workflow.BaseWorkflow {
+    readonly engine: FileSystemEngine;
+    readonly engineHost: NodeModulesEngineHost;
     constructor(host: virtualFs.Host, options: {
         force?: boolean;
         dryRun?: boolean;
         root?: Path;
         packageManager?: string;
+        registry?: schema.CoreSchemaRegistry;
     });
 }
 
-export declare type OptionTransform<T extends object, R extends object> = (schematic: FileSystemSchematicDescription, options: T, context?: FileSystemSchematicContext) => Observable<R>;
+export declare type OptionTransform<T extends object, R extends object> = (schematic: FileSystemSchematicDescription, options: T, context?: FileSystemSchematicContext) => Observable<R> | PromiseLike<R> | R;
 
 export declare class SchematicMissingDescriptionException extends BaseException {
     constructor(name: string);

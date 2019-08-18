@@ -6,26 +6,23 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import { logging, terminal } from '@angular-devkit/core';
+import { logging } from '@angular-devkit/core';
 import { spawn } from 'child_process';
+import { colors } from '../utilities/color';
 
-
-export type NpmInstall = (packageName: string,
-                          logger: logging.Logger,
-                          packageManager: string,
-                          projectRoot: string,
-                          save?: boolean) => Promise<void>;
-
-export default async function (packageName: string,
-                               logger: logging.Logger,
-                               packageManager: string,
-                               projectRoot: string,
-                               save = true) {
+export default async function(
+  packageName: string,
+  logger: logging.Logger,
+  packageManager: string,
+  projectRoot: string,
+  save = true,
+) {
   const installArgs: string[] = [];
   switch (packageManager) {
     case 'cnpm':
+    case 'pnpm':
     case 'npm':
-      installArgs.push('install', '--quiet');
+      installArgs.push('install');
       break;
 
     case 'yarn':
@@ -34,11 +31,11 @@ export default async function (packageName: string,
 
     default:
       packageManager = 'npm';
-      installArgs.push('install', '--quiet');
+      installArgs.push('install');
       break;
   }
 
-  logger.info(terminal.green(`Installing packages for tooling via ${packageManager}.`));
+  logger.info(colors.green(`Installing packages for tooling via ${packageManager}.`));
 
   if (packageName) {
     installArgs.push(packageName);
@@ -47,22 +44,20 @@ export default async function (packageName: string,
   if (!save) {
     installArgs.push('--no-save');
   }
-  const installOptions = {
-    stdio: 'inherit',
-    shell: true,
-  };
+
+  installArgs.push('--quiet');
 
   await new Promise((resolve, reject) => {
-    spawn(packageManager, installArgs, installOptions)
-      .on('close', (code: number) => {
+    spawn(packageManager, installArgs, { stdio: 'inherit', shell: true }).on(
+      'close',
+      (code: number) => {
         if (code === 0) {
-          logger.info(terminal.green(`Installed packages for tooling via ${packageManager}.`));
+          logger.info(colors.green(`Installed packages for tooling via ${packageManager}.`));
           resolve();
         } else {
-          const message = 'Package install failed, see above.';
-          logger.info(terminal.red(message));
-          reject(message);
+          reject('Package install failed, see above.');
         }
-      });
+      },
+    );
   });
 }

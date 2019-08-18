@@ -18,13 +18,14 @@
     "master"
   ],
   "ignoreDeps": [
-    "source-map",
     "@types/node",
     "webpack-subresource-integrity"
   ],
   "packageFiles": [
+    "WORKSPACE",
     "package.json",
-    "packages/**/package.json"
+    "packages/**/package.json",
+    "tests/legacy-cli/e2e/ng-snapshot/package.json"
   ],
   "major": {
     "devDependencies": {
@@ -41,7 +42,9 @@
     },
     {
       "packagePatterns": [
-        "^@bazel\/.*"
+        "^@bazel\/.*",
+        "^build_bazel.*",
+        "^bazel_toolchains$"
       ],
       "groupName": "bazel",
       "pinVersions": false
@@ -50,7 +53,17 @@
       "packageNames": [
         "typescript"
       ],
-      "updateTypes": "patch"
+      "separateMinorPatch": true
+    },
+    {
+      "packageNames": [
+        "typescript"
+      ],
+      "updateTypes": [
+        "minor",
+        "major"
+      ],
+      "enabled": false
     }
   ]
 }

@@ -26,12 +26,12 @@ export function appendPropertyInAstObject(
   if (node.properties.length > 0) {
     // Insert comma.
     const last = node.properties[node.properties.length - 1];
-    const {text, end} = last;
+    const { text, end } = last;
     const commaIndex = text.endsWith('\n') ? end.offset - 1 : end.offset;
     recorder.insertRight(commaIndex, ',');
     index = end.offset;
   }
-  const content = JSON.stringify(value, null, indent).replace(/\n/g, indentStr);
+  const content = _stringifyContent(value, indentStr);
   recorder.insertRight(
     index,
     (node.properties.length === 0 && indent ? '\n' : '')
@@ -84,13 +84,68 @@ export function insertPropertyInAstObjectInOrder(
   const insertIndex = insertAfterProp === null
     ? node.start.offset + 1
     : insertAfterProp.end.offset + 1;
-  const content = JSON.stringify(value, null, indent).replace(/\n/g, indentStr);
+  const content = _stringifyContent(value, indentStr);
   recorder.insertRight(
     insertIndex,
     indentStr
     + `"${propertyName}":${indent ? ' ' : ''}${content}`
     + ',',
   );
+}
+
+export function removePropertyInAstObject(
+  recorder: UpdateRecorder,
+  node: JsonAstObject,
+  propertyName: string,
+) {
+  // Find the property inside the object.
+  const propIdx = node.properties.findIndex(prop => prop.key.value === propertyName);
+
+  if (propIdx === -1) {
+    // There's nothing to remove.
+    return;
+  }
+
+  if (node.properties.length === 1) {
+    // This is a special case. Everything should be removed, including indentation.
+    recorder.remove(node.start.offset, node.end.offset - node.start.offset);
+    recorder.insertRight(node.start.offset, '{}');
+
+    return;
+  }
+
+  // The AST considers commas and indentation to be part of the preceding property.
+  // To get around messy comma and identation management, we can work over the range between
+  // two properties instead.
+  const previousProp = node.properties[propIdx - 1];
+  const targetProp = node.properties[propIdx];
+  const nextProp = node.properties[propIdx + 1];
+
+  let start, end;
+  if (previousProp) {
+    // Given the object below, and intending to remove the `m` property:
+    // "{\n  \"a\": \"a\",\n  \"m\": \"m\",\n  \"z\": \"z\"\n}"
+    //                        ^---------------^
+    // Removing the range above results in:
+    // "{\n  \"a\": \"a\",\n  \"z\": \"z\"\n}"
+    start = previousProp.end;
+    end = targetProp.end;
+  } else {
+    // If there's no previousProp there is a nextProp, since we've specialcased the 1 length case.
+    // Given the object below, and intending to remove the `a` property:
+    // "{\n  \"a\": \"a\",\n  \"m\": \"m\",\n  \"z\": \"z\"\n}"
+    //       ^---------------^
+    // Removing the range above results in:
+    // "{\n  \"m\": \"m\",\n  \"z\": \"z\"\n}"
+    start = targetProp.start;
+    end = nextProp.start;
+  }
+
+  recorder.remove(start.offset, end.offset - start.offset);
+  if (!nextProp) {
+
+    recorder.insertRight(start.offset, '\n');
+  }
 }
 
 
@@ -113,7 +168,7 @@ export function appendValueInAstArray(
     index,
     (node.elements.length === 0 && indent ? '\n' : '')
     + ' '.repeat(indent)
-    + JSON.stringify(value, null, indent).replace(/\n/g, indentStr)
+    + _stringifyContent(value, indentStr)
     + indentStr.slice(0, -indent),
   );
 }
@@ -135,4 +190,25 @@ export function findPropertyInAstObject(
 
 function _buildIndent(count: number): string {
   return count ? '\n' + ' '.repeat(count) : '';
+}
+
+function _stringifyContent(value: JsonValue, indentStr: string): string {
+  // TODO: Add snapshot tests
+
+  // The 'space' value is 2, because we want to add 2 additional
+  // indents from the 'key' node.
+
+  // If we use the indent provided we will have double indents:
+  // "budgets": [
+  //   {
+  //     "type": "initial",
+  //     "maximumWarning": "2mb",
+  //     "maximumError": "5mb"
+  //   },
+  //   {
+  //       "type": "anyComponentStyle",
+  //       'maximumWarning": "5kb"
+  //   }
+  // ]
+  return JSON.stringify(value, null, 2).replace(/\n/g, indentStr);
 }

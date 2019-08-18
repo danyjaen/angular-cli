@@ -16,7 +16,7 @@ export class ParseArgumentException extends BaseException {
     public readonly parsed: Arguments,
     public readonly ignored: string[],
   ) {
-    super(`One or more errors occured while parsing arguments:\n  ${comments.join('\n  ')}`);
+    super(`One or more errors occurred while parsing arguments:\n  ${comments.join('\n  ')}`);
   }
 }
 
@@ -269,7 +269,9 @@ export function parseFreeFormArguments(args: string[]): Arguments {
     }
   }
 
-  parsedOptions['--'] = leftovers;
+  if (leftovers.length) {
+    parsedOptions['--'] = leftovers;
+  }
 
   return parsedOptions;
 }

@@ -6,17 +6,23 @@
  * found in the LICENSE file at https://angular.io/license
  */
 
-import { runTargetSpec } from '@angular-devkit/architect/testing';
+import { Architect } from '@angular-devkit/architect';
 import { join, virtualFs } from '@angular-devkit/core';
 import { take, tap } from 'rxjs/operators';
-import { browserTargetSpec, host, outputPath } from '../utils';
+import { createArchitect, host, outputPath } from '../utils';
 
 
 describe('Browser Builder resolve json module', () => {
-  beforeEach(done => host.initialize().toPromise().then(done, done.fail));
-  afterEach(done => host.restore().toPromise().then(done, done.fail));
+  const target = { project: 'app', target: 'build' };
+  let architect: Architect;
 
-  it('works with watch', (done) => {
+  beforeEach(async () => {
+    await host.initialize().toPromise();
+    architect = (await createArchitect(host.root())).architect;
+  });
+  afterEach(async () => host.restore().toPromise());
+
+  it('works with watch', async () => {
     host.writeMultipleFiles({
       'src/my-json-file.json': `{"foo": "1"}`,
       'src/main.ts': `import * as a from './my-json-file.json'; console.log(a);`,
@@ -24,14 +30,15 @@ describe('Browser Builder resolve json module', () => {
 
     host.replaceInFile(
       'tsconfig.json',
-      '"target": "es5"',
+      '"target": "es2015"',
       '"target": "es5", "resolveJsonModule": true',
     );
 
     const overrides = { watch: true };
 
     let buildCount = 1;
-    runTargetSpec(host, browserTargetSpec, overrides).pipe(
+    const run = await architect.scheduleTarget(target, overrides);
+    await run.output.pipe(
       tap(() => {
         const content = virtualFs.fileBufferToString(
           host.scopedSync().read(join(outputPath, 'main.js')),
@@ -39,13 +46,13 @@ describe('Browser Builder resolve json module', () => {
 
         switch (buildCount) {
           case 1:
-            expect(content).toContain('foo":"1"');
+            expect(content).toContain('\\"foo\\":\\"1\\"');
             host.writeMultipleFiles({
               'src/my-json-file.json': `{"foo": "2"}`,
             });
             break;
           case 2:
-            expect(content).toContain('foo":"2"');
+            expect(content).toContain('\\"foo\\":\\"2\\"');
             break;
         }
 
@@ -53,7 +60,7 @@ describe('Browser Builder resolve json module', () => {
       }),
       tap((buildEvent) => expect(buildEvent.success).toBe(true)),
       take(2),
-    ).toPromise().then(done, done.fail);
+    ).toPromise();
   });
 
 });

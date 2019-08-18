@@ -7,11 +7,11 @@
  */
 import * as ajv from 'ajv';
 import * as http from 'http';
-import { Observable, from, of, throwError } from 'rxjs';
+import { Observable, from, isObservable, of, throwError } from 'rxjs';
 import { concatMap, map, switchMap, tap } from 'rxjs/operators';
 import * as Url from 'url';
 import { BaseException } from '../../exception/exception';
-import { PartiallyOrderedSet, deepCopy, isObservable } from '../../utils';
+import { PartiallyOrderedSet, deepCopy } from '../../utils';
 import { JsonArray, JsonObject, JsonValue, isJsonObject } from '../interface';
 import {
   JsonPointer,
@@ -347,10 +347,6 @@ export class CoreSchemaRegistry implements SchemaRegistry {
             // tslint:disable-next-line:no-any https://github.com/ReactiveX/rxjs/issues/3989
             result = (result as any).pipe(
               ...[...this._pre].map(visitor => concatMap((data: JsonValue) => {
-                if (schema === false || schema === true) {
-                  return of(data);
-                }
-
                 return visitJson(data, visitor, schema, this._resolver, validate);
               })),
             );
@@ -418,10 +414,6 @@ export class CoreSchemaRegistry implements SchemaRegistry {
                   // tslint:disable-next-line:no-any https://github.com/ReactiveX/rxjs/issues/3989
                   result = (result as any).pipe(
                     ...[...this._post].map(visitor => concatMap((data: JsonValue) => {
-                      if (schema === false || schema === true) {
-                        return of(schema);
-                      }
-
                       return visitJson(data, visitor, schema, this._resolver, validate);
                     })),
                   );
@@ -577,7 +569,6 @@ export class CoreSchemaRegistry implements SchemaRegistry {
           id: path,
           type,
           message,
-          priority: 0,
           raw: schema,
           items,
           multiselect: type === 'list' ? schema.multiselect : false,
@@ -632,8 +623,6 @@ export class CoreSchemaRegistry implements SchemaRegistry {
     if (!provider) {
       return of(data);
     }
-
-    prompts.sort((a, b) => b.priority - a.priority);
 
     return from(provider(prompts)).pipe(
       map(answers => {
@@ -728,7 +717,7 @@ export class CoreSchemaRegistry implements SchemaRegistry {
     // tslint:disable-next-line:no-any https://github.com/ReactiveX/rxjs/issues/3989
     return (of(data) as any).pipe(
       ...[...smartDefaults.entries()].map(([pointer, schema]) => {
-        return concatMap<T, T>(data => {
+        return concatMap(data => {
           const fragments = JSON.parse(pointer);
           const source = this._sourceMap.get((schema as JsonObject).$source as string);
 

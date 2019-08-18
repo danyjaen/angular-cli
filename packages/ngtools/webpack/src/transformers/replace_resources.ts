@@ -5,11 +5,13 @@
  * Use of this source code is governed by an MIT-style license that can be
  * found in the LICENSE file at https://angular.io/license
  */
+import { tags } from '@angular-devkit/core';
 import * as ts from 'typescript';
 
 export function replaceResources(
   shouldTransform: (fileName: string) => boolean,
   getTypeChecker: () => ts.TypeChecker,
+  directTemplateLoading = false,
 ): ts.TransformerFactory<ts.SourceFile> {
 
   return (context: ts.TransformationContext) => {
@@ -19,7 +21,17 @@ export function replaceResources(
       if (ts.isClassDeclaration(node)) {
         const decorators = ts.visitNodes(
           node.decorators,
-          (node: ts.Decorator) => visitDecorator(node, typeChecker),
+          (node: ts.Decorator) => visitDecorator(node, typeChecker, directTemplateLoading),
+        );
+
+        return ts.updateClassDeclaration(
+          node,
+          decorators,
+          node.modifiers,
+          node.name,
+          node.typeParameters,
+          node.heritageClauses,
+          node.members,
         );
 
         // todo: we need to investigate and confirm that using
@@ -38,15 +50,32 @@ export function replaceResources(
       return ts.visitEachChild(node, visitNode, context);
     };
 
-    return (sourceFile: ts.SourceFile) => (
-      shouldTransform(sourceFile.fileName)
-        ? ts.visitNode(sourceFile, visitNode)
-        : sourceFile
-    );
+    // emit helper for `import Name from "foo"`
+    const importDefaultHelper: ts.EmitHelper = {
+      name: 'typescript:commonjsimportdefault',
+      scoped: false,
+      text: tags.stripIndent`
+      var __importDefault = (this && this.__importDefault) || function (mod) {
+        return (mod && mod.__esModule) ? mod : { "default": mod };
+      };`,
+    };
+
+    return (sourceFile: ts.SourceFile) => {
+      if (shouldTransform(sourceFile.fileName)) {
+        context.requestEmitHelper(importDefaultHelper);
+
+        return ts.visitNode(sourceFile, visitNode);
+      }
+
+      return sourceFile;
+    };
   };
 }
 
-function visitDecorator(node: ts.Decorator, typeChecker: ts.TypeChecker): ts.Decorator {
+function visitDecorator(
+  node: ts.Decorator,
+  typeChecker: ts.TypeChecker,
+  directTemplateLoading: boolean): ts.Decorator {
   if (!isComponentDecorator(node, typeChecker)) {
     return node;
   }
@@ -68,7 +97,8 @@ function visitDecorator(node: ts.Decorator, typeChecker: ts.TypeChecker): ts.Dec
   // visit all properties
   let properties = ts.visitNodes(
     objectExpression.properties,
-    (node: ts.ObjectLiteralElementLike) => visitComponentMetadata(node, styleReplacements),
+    (node: ts.ObjectLiteralElementLike) =>
+      visitComponentMetadata(node, styleReplacements, directTemplateLoading),
   );
 
   // replace properties with updated properties
@@ -95,6 +125,7 @@ function visitDecorator(node: ts.Decorator, typeChecker: ts.TypeChecker): ts.Dec
 function visitComponentMetadata(
   node: ts.ObjectLiteralElementLike,
   styleReplacements: ts.Expression[],
+  directTemplateLoading: boolean,
 ): ts.ObjectLiteralElementLike | undefined {
   if (!ts.isPropertyAssignment(node) || ts.isComputedPropertyName(node.name)) {
     return node;
@@ -110,7 +141,7 @@ function visitComponentMetadata(
       return ts.updatePropertyAssignment(
         node,
         ts.createIdentifier('template'),
-        createRequireExpression(node.initializer),
+        createRequireExpression(node.initializer, directTemplateLoading ? '!raw-loader!' : ''),
       );
 
     case 'styles':
@@ -145,13 +176,13 @@ function visitComponentMetadata(
   }
 }
 
-export function getResourceUrl(node: ts.Expression): string | null {
+export function getResourceUrl(node: ts.Expression, loader = ''): string | null {
   // only analyze strings
   if (!ts.isStringLiteral(node) && !ts.isNoSubstitutionTemplateLiteral(node)) {
     return null;
   }
 
-  return `${/^\.?\.\//.test(node.text) ? '' : './'}${node.text}`;
+  return `${loader}${/^\.?\.\//.test(node.text) ? '' : './'}${node.text}`;
 }
 
 function isComponentDecorator(node: ts.Node, typeChecker: ts.TypeChecker): node is ts.Decorator {
@@ -167,16 +198,28 @@ function isComponentDecorator(node: ts.Node, typeChecker: ts.TypeChecker): node 
   return false;
 }
 
-function createRequireExpression(node: ts.Expression): ts.Expression {
-  const url = getResourceUrl(node);
+function createRequireExpression(node: ts.Expression, loader?: string): ts.Expression {
+  const url = getResourceUrl(node, loader);
   if (!url) {
     return node;
   }
 
-  return ts.createCall(
+  const callExpression = ts.createCall(
     ts.createIdentifier('require'),
     undefined,
     [ts.createLiteral(url)],
+  );
+
+  return ts.createPropertyAccess(
+    ts.createCall(
+      ts.setEmitFlags(
+        ts.createIdentifier('__importDefault'),
+        ts.EmitFlags.HelperName | ts.EmitFlags.AdviseOnEmitNode,
+      ),
+      undefined,
+      [callExpression],
+    ),
+    'default',
   );
 }
 

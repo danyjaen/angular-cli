@@ -59,7 +59,7 @@
       "parameters",
       "statements"
     ],
-    "max-line-length": [true, 100],
+    "max-line-length": [true, 140],
     "no-inferrable-types": true,
     "class-name": true,
     "comment-format": [
@@ -79,6 +79,8 @@
     "no-eval": true,
     "no-any": true,
     "no-arg": true,
+    "no-debugger": true,
+    "no-console": true,
     "no-internal-module": true,
     "no-trailing-whitespace": true,
     "no-unused-expression": true,

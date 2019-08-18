@@ -6,17 +6,15 @@
  * found in the LICENSE file at https://angular.io/license
  */
 import { LicenseWebpackPlugin } from 'license-webpack-plugin';
-import * as path from 'path';
-import { IndexHtmlWebpackPlugin } from '../../plugins/index-html-webpack-plugin';
-import { generateEntryPoints } from '../../utilities/package-chunk-sort';
+import * as webpack from 'webpack';
 import { WebpackConfigOptions } from '../build-options';
-import { getSourceMapDevTool, normalizeExtraEntryPoints } from './utils';
+import { getSourceMapDevTool, isPolyfillsEntry, normalizeExtraEntryPoints } from './utils';
 
 const SubresourceIntegrityPlugin = require('webpack-subresource-integrity');
 
 
-export function getBrowserConfig(wco: WebpackConfigOptions) {
-  const { root, buildOptions } = wco;
+export function getBrowserConfig(wco: WebpackConfigOptions): webpack.Configuration {
+  const { buildOptions } = wco;
   const extraPlugins = [];
 
   let isEval = false;
@@ -34,18 +32,6 @@ export function getBrowserConfig(wco: WebpackConfigOptions) {
     !scriptsOptimization) {
     // Produce eval sourcemaps for development with serve, which are faster.
     isEval = true;
-  }
-
-  if (buildOptions.index) {
-    extraPlugins.push(new IndexHtmlWebpackPlugin({
-      input: path.resolve(root, buildOptions.index),
-      output: path.basename(buildOptions.index),
-      baseHref: buildOptions.baseHref,
-      entrypoints: generateEntryPoints(buildOptions),
-      deployUrl: buildOptions.deployUrl,
-      sri: buildOptions.subresourceIntegrity,
-      noModuleEntrypoints: ['es2015-polyfills'],
-    }));
   }
 
   if (buildOptions.subresourceIntegrity) {
@@ -67,8 +53,8 @@ export function getBrowserConfig(wco: WebpackConfigOptions) {
 
   if (!isEval && (scriptsSourceMap || stylesSourceMap)) {
     extraPlugins.push(getSourceMapDevTool(
-      scriptsSourceMap,
-      stylesSourceMap,
+      !!scriptsSourceMap,
+      !!stylesSourceMap,
       hiddenSourceMap,
     ));
   }
@@ -92,12 +78,12 @@ export function getBrowserConfig(wco: WebpackConfigOptions) {
       splitChunks: {
         maxAsyncRequests: Infinity,
         cacheGroups: {
-          default: buildOptions.commonChunk && {
+          default: !!buildOptions.commonChunk && {
             chunks: 'async',
             minChunks: 2,
             priority: 10,
           },
-          common: buildOptions.commonChunk && {
+          common: !!buildOptions.commonChunk && {
             name: 'common',
             chunks: 'async',
             minChunks: 2,
@@ -105,7 +91,7 @@ export function getBrowserConfig(wco: WebpackConfigOptions) {
             priority: 5,
           },
           vendors: false,
-          vendor: buildOptions.vendorChunk && {
+          vendor: !!buildOptions.vendorChunk && {
             name: 'vendor',
             chunks: 'initial',
             enforce: true,
@@ -113,7 +99,7 @@ export function getBrowserConfig(wco: WebpackConfigOptions) {
               const moduleName = module.nameForCondition ? module.nameForCondition() : '';
 
               return /[\\/]node_modules[\\/]/.test(moduleName)
-                && !chunks.some(({ name }) => name === 'polyfills' || name === 'es2015-polyfills'
+                && !chunks.some(({ name }) => isPolyfillsEntry(name)
                   || globalStylesBundleNames.includes(name));
             },
           },

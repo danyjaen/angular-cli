@@ -1,104 +1,91 @@
 export declare class Architect {
-    constructor(_workspace: experimental.workspace.Workspace);
-    getBuilder<OptionsT>(builderDescription: BuilderDescription, context: BuilderContext): Builder<OptionsT>;
-    getBuilderConfiguration<OptionsT>(targetSpec: TargetSpecifier): BuilderConfiguration<OptionsT>;
-    getBuilderDescription<OptionsT>(builderConfig: BuilderConfiguration<OptionsT>): Observable<BuilderDescription>;
-    listProjectTargets(projectName: string): string[];
-    loadArchitect(): Observable<this>;
-    run<OptionsT>(builderConfig: BuilderConfiguration<OptionsT>, partialContext?: Partial<BuilderContext>): Observable<BuildEvent>;
-    validateBuilderOptions<OptionsT>(builderConfig: BuilderConfiguration<OptionsT>, builderDescription: BuilderDescription): Observable<BuilderConfiguration<OptionsT>>;
-}
-
-export declare class ArchitectNotYetLoadedException extends BaseException {
-    constructor();
-}
-
-export interface Builder<OptionsT> {
-    run(builderConfig: BuilderConfiguration<Partial<OptionsT>>): Observable<BuildEvent>;
-}
-
-export declare class BuilderCannotBeResolvedException extends BaseException {
-    constructor(builder: string);
-}
-
-export interface BuilderConfiguration<OptionsT = {}> {
-    builder: string;
-    options: OptionsT;
-    projectType: string;
-    root: Path;
-    sourceRoot?: Path;
-}
-
-export interface BuilderConstructor<OptionsT> {
-    new (context: BuilderContext): Builder<OptionsT>;
+    constructor(_host: ArchitectHost, registry?: json.schema.SchemaRegistry, additionalJobRegistry?: experimental.jobs.Registry);
+    has(name: experimental.jobs.JobName): Observable<boolean>;
+    scheduleBuilder(name: string, options: json.JsonObject, scheduleOptions?: ScheduleOptions): Promise<BuilderRun>;
+    scheduleTarget(target: Target, overrides?: json.JsonObject, scheduleOptions?: ScheduleOptions): Promise<BuilderRun>;
 }
 
 export interface BuilderContext {
-    architect: Architect;
-    host: virtualFs.Host<{}>;
-    logger: logging.Logger;
-    targetSpecifier?: TargetSpecifier;
-    workspace: experimental.workspace.Workspace;
+    readonly analytics: analytics.Analytics;
+    builder: BuilderInfo;
+    currentDirectory: string;
+    id: number;
+    logger: logging.LoggerApi;
+    target?: Target;
+    workspaceRoot: string;
+    addTeardown(teardown: () => (Promise<void> | void)): void;
+    getBuilderNameForTarget(target: Target): Promise<string>;
+    getTargetOptions(target: Target): Promise<json.JsonObject>;
+    reportProgress(current: number, total?: number, status?: string): void;
+    reportRunning(): void;
+    reportStatus(status: string): void;
+    scheduleBuilder(builderName: string, options?: json.JsonObject, scheduleOptions?: ScheduleOptions): Promise<BuilderRun>;
+    scheduleTarget(target: Target, overrides?: json.JsonObject, scheduleOptions?: ScheduleOptions): Promise<BuilderRun>;
+    validateOptions<T extends json.JsonObject = json.JsonObject>(options: json.JsonObject, builderName: string): Promise<T>;
 }
 
-export interface BuilderDescription {
+export interface BuilderHandlerFn<A extends json.JsonObject> {
+    (input: A, context: BuilderContext): BuilderOutputLike;
+}
+
+export declare type BuilderInfo = json.JsonObject & {
+    builderName: string;
     description: string;
-    name: string;
-    schema: JsonObject;
+    optionSchema: json.schema.JsonSchema;
+};
+
+export declare type BuilderInput = json.JsonObject & RealBuilderInput;
+
+export declare type BuilderOutput = json.JsonObject & RealBuilderOutput;
+
+export declare type BuilderOutputLike = SubscribableOrPromise<BuilderOutput> | BuilderOutput;
+
+export declare type BuilderProgress = json.JsonObject & RealBuilderProgress & TypedBuilderProgress;
+
+export declare type BuilderProgressReport = BuilderProgress & ({
+    target?: Target;
+    builder: BuilderInfo;
+});
+
+export declare type BuilderRegistry = experimental.jobs.Registry<json.JsonObject, BuilderInput, BuilderOutput>;
+
+export interface BuilderRun {
+    id: number;
+    info: BuilderInfo;
+    output: Observable<BuilderOutput>;
+    progress: Observable<BuilderProgressReport>;
+    result: Promise<BuilderOutput>;
+    stop(): Promise<void>;
 }
 
-export declare class BuilderNotFoundException extends BaseException {
-    constructor(builder: string);
+export declare function createBuilder<OptT extends json.JsonObject, OutT extends BuilderOutput = BuilderOutput>(fn: BuilderHandlerFn<OptT>): Builder<OptT>;
+
+export declare function isBuilderOutput(obj: any): obj is BuilderOutput;
+
+export interface ScheduleOptions {
+    analytics?: analytics.Analytics;
+    logger?: logging.Logger;
 }
 
-export interface BuilderPaths {
-    class: Path;
-    description: string;
-    schema: Path;
-}
+export declare function scheduleTargetAndForget(context: BuilderContext, target: Target, overrides?: json.JsonObject, scheduleOptions?: ScheduleOptions): Observable<BuilderOutput>;
 
-export interface BuilderPathsMap {
-    builders: {
-        [k: string]: BuilderPaths;
-    };
-}
+export declare type Target = json.JsonObject & RealTarget;
 
-export interface BuildEvent<BuildResultT = any> {
-    result?: BuildResultT;
-    success: boolean;
-}
+export declare function targetFromTargetString(str: string): Target;
 
-export declare class ConfigurationNotFoundException extends BaseException {
-    constructor(projectName: string, configurationName: string);
-}
+export declare function targetStringFromTarget({ project, target, configuration }: Target): string;
 
-export declare class ProjectNotFoundException extends BaseException {
-    constructor(projectName: string);
-}
-
-export interface Target<T = JsonObject> {
-    builder: string;
-    configurations?: {
-        [k: string]: TargetConfiguration<T>;
-    };
-    options: TargetOptions<T>;
-}
-
-export declare type TargetConfiguration<T = JsonObject> = Partial<T>;
-
-export interface TargetMap {
-    [k: string]: Target;
-}
-
-export declare class TargetNotFoundException extends BaseException {
-    constructor(projectName: string, targetName: string);
-}
-
-export declare type TargetOptions<T = JsonObject> = T;
-
-export interface TargetSpecifier<OptionsT = {}> {
-    configuration?: string;
-    overrides?: Partial<OptionsT>;
-    project: string;
-    target: string;
-}
+export declare type TypedBuilderProgress = ({
+    state: BuilderProgressState.Stopped;
+} | {
+    state: BuilderProgressState.Error;
+    error: json.JsonValue;
+} | {
+    state: BuilderProgressState.Waiting;
+    status?: string;
+} | {
+    state: BuilderProgressState.Running;
+    status?: string;
+    current: number;
+    total?: number;
+});

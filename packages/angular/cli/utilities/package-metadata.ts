@@ -24,6 +24,8 @@ export interface PackageIdentifier {
   scope: string | null;
   registry: boolean;
   raw: string;
+  fetchSpec: string;
+  rawSpec: string;
 }
 
 export interface PackageManifest {
@@ -189,7 +191,7 @@ export async function fetchPackageMetadata(
 
   if (response.versions) {
     for (const [version, manifest] of Object.entries(response.versions)) {
-      metadata.versions.set(version, normalizeManifest(manifest));
+      metadata.versions.set(version, normalizeManifest(manifest as {}));
     }
   }
 

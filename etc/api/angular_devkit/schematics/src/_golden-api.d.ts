@@ -39,7 +39,7 @@ export declare type AsyncFileOperator = (tree: FileEntry) => Observable<FileEntr
 export declare abstract class BaseWorkflow implements Workflow {
     protected _context: WorkflowExecutionContext[];
     protected _dryRun: boolean;
-    protected _engine: SchematicEngine<{}, {}>;
+    protected _engine: Engine<{}, {}>;
     protected _engineHost: EngineHost<{}, {}>;
     protected _force: boolean;
     protected _host: virtualFs.Host;
@@ -47,6 +47,8 @@ export declare abstract class BaseWorkflow implements Workflow {
     protected _registry: schema.CoreSchemaRegistry;
     protected _reporter: Subject<DryRunEvent>;
     readonly context: Readonly<WorkflowExecutionContext>;
+    readonly engine: Engine<{}, {}>;
+    readonly engineHost: EngineHost<{}, {}>;
     readonly lifeCycle: Observable<LifeCycleEvent>;
     readonly registry: schema.SchemaRegistry;
     readonly reporter: Observable<DryRunEvent>;
@@ -65,7 +67,7 @@ export interface BaseWorkflowOptions {
 
 export declare function branchAndMerge(rule: Rule, strategy?: MergeStrategy): Rule;
 
-export declare function callRule(rule: Rule, input: Observable<Tree>, context: SchematicContext): Observable<Tree>;
+export declare function callRule(rule: Rule, input: Tree | Observable<Tree>, context: SchematicContext): Observable<Tree>;
 
 export declare function callSource(source: Source, context: SchematicContext): Observable<Tree>;
 
@@ -244,33 +246,8 @@ export interface FilePredicate<T> {
     (path: Path, entry?: Readonly<FileEntry> | null): T;
 }
 
-export declare class FileSystemCreateTree extends FileSystemTree {
-    constructor(host: virtualFs.Host);
-}
-
-export declare class FileSystemDirEntry extends VirtualDirEntry {
-    protected _host: virtualFs.SyncDelegateHost<{}>;
-    readonly parent: DirEntry | null;
-    readonly subdirs: PathFragment[];
-    readonly subfiles: PathFragment[];
-    constructor(_host: virtualFs.SyncDelegateHost<{}>, tree: FileSystemTree, path?: Path);
-    protected _createDir(name: PathFragment): DirEntry;
-    file(name: PathFragment): FileEntry | null;
-}
-
 export declare class FileSystemSink extends HostSink {
     constructor(dir: string, force?: boolean);
-}
-
-export declare class FileSystemTree extends VirtualTree {
-    protected _host: virtualFs.SyncDelegateHost<{}>;
-    protected _initialized: boolean;
-    readonly tree: Map<Path, FileEntry>;
-    constructor(host: virtualFs.Host);
-    protected _copyTo<T extends VirtualTree>(tree: T): void;
-    protected _recursiveFileList(): Path[];
-    branch(): Tree;
-    get(path: string): FileEntry | null;
 }
 
 export declare type FileVisitor = FilePredicate<void>;
@@ -339,7 +316,6 @@ export declare class HostTree implements Tree {
     get(path: string): FileEntry | null;
     getDir(path: string): DirEntry;
     merge(other: Tree, strategy?: MergeStrategy): void;
-    optimize(): this;
     overwrite(path: string, content: Buffer | string): void;
     read(path: string): Buffer | null;
     rename(from: string, to: string): void;
@@ -449,7 +425,7 @@ export interface RequiredWorkflowExecutionContext {
     schematic: string;
 }
 
-export declare type Rule = (tree: Tree, context: SchematicContext) => Tree | Observable<Tree> | Rule | void;
+export declare type Rule = (tree: Tree, context: SchematicContext) => Tree | Observable<Tree> | Rule | Promise<void> | Promise<Rule> | void;
 
 export declare type RuleFactory<T extends object> = (options: T) => Rule;
 
@@ -581,6 +557,7 @@ export interface TreeConstructor {
 export declare const TreeSymbol: symbol;
 
 export interface TypedSchematicContext<CollectionMetadataT extends object, SchematicMetadataT extends object> {
+    readonly analytics?: analytics.Analytics;
     readonly debug: boolean;
     readonly engine: Engine<CollectionMetadataT, SchematicMetadataT>;
     readonly interactive: boolean;
@@ -633,60 +610,6 @@ export interface UpdateRecorder {
 }
 
 export declare function url(urlString: string): Source;
-
-export declare class VirtualDirEntry implements DirEntry {
-    protected _path: Path;
-    protected _subdirs: Map<PathFragment, DirEntry>;
-    protected _tree: VirtualTree;
-    readonly parent: DirEntry | null;
-    readonly path: Path;
-    readonly subdirs: PathFragment[];
-    readonly subfiles: PathFragment[];
-    constructor(_tree: VirtualTree, _path?: Path);
-    protected _createDir(name: PathFragment): DirEntry;
-    dir(name: PathFragment): DirEntry;
-    file(name: PathFragment): FileEntry | null;
-    visit(visitor: FileVisitor): void;
-}
-
-export declare class VirtualTree implements Tree {
-    protected _actions: ActionList;
-    protected _cacheMap: Map<Path, FileEntry>;
-    protected _root: VirtualDirEntry;
-    protected _tree: Map<Path, FileEntry>;
-    readonly actions: Action[];
-    readonly files: Path[];
-    readonly root: DirEntry;
-    readonly staging: ReadonlyMap<Path, FileEntry>;
-    protected readonly tree: ReadonlyMap<Path, FileEntry>;
-    protected _copyTo<T extends VirtualTree>(tree: T): void;
-    protected _create(path: Path, content: Buffer, action?: Action): void;
-    protected _delete(path: Path, action?: Action): void;
-    protected _normalizePath(path: string): Path;
-    protected _overwrite(path: Path, content: Buffer, action?: Action): void;
-    protected _rename(path: Path, to: Path, action?: Action, force?: boolean): void;
-    apply(action: Action, strategy: MergeStrategy): void;
-    beginUpdate(path: string): UpdateRecorder;
-    branch(): Tree;
-    commitUpdate(record: UpdateRecorder): void;
-    create(path: string, content: Buffer | string): void;
-    delete(path: string): void;
-    exists(path: string): boolean;
-    get(path: string): FileEntry | null;
-    getDir(path: string): DirEntry;
-    has(path: string): boolean;
-    merge(other: Tree, strategy?: MergeStrategy): void;
-    optimize(): void;
-    overwrite(path: string, content: Buffer | string): void;
-    read(path: string): Buffer | null;
-    rename(path: string, to: string): void;
-    set(entry: FileEntry): Map<Path, FileEntry>;
-    visit(visitor: FileVisitor): void;
-    static branch(tree: Tree): Tree;
-    static isVirtualTree(tree: Tree): tree is VirtualTree;
-    static merge(tree: Tree, other: Tree, strategy?: MergeStrategy): Tree;
-    static optimize(tree: Tree): VirtualTree;
-}
 
 export declare function when(predicate: FilePredicate<boolean>, operator: FileOperator): FileOperator;
 

@@ -14,6 +14,10 @@ export default async function() {
     ];
   });
 
+  await updateJsonFile('tsconfig.app.json', tsConfig => {
+    tsConfig.files.push('src/app/lazy/lazy.module.ts');
+  });
+
   // Update the app component to use the lazy module
   await writeFile('src/app/app.component.ts', `
     import { Component, SystemJsNgModuleLoader } from '@angular/core';
@@ -36,7 +40,7 @@ export default async function() {
   // Build and look for the split lazy module
   await ng('build');
   for (const file of fs.readdirSync('./dist/test-project')) {
-    if (file === 'src-app-lazy-lazy-module.js') {
+    if (file === 'src-app-lazy-lazy-module-es5.js') {
       // Lazy module chunk was found and succesfully split
       return;
     }

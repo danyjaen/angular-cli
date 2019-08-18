@@ -11,11 +11,7 @@ import { map, take, toArray } from 'rxjs/operators';
 import { JobHandlerContext, JobOutboundMessage, JobOutboundMessageKind, JobState } from './api';
 import { createJobHandler } from './create-job-handler';
 import { SimpleJobRegistry } from './simple-registry';
-import {
-  JobInboundMessageSchemaValidationError,
-  JobOutputSchemaValidationError,
-  SimpleScheduler,
-} from './simple-scheduler';
+import { SimpleScheduler } from './simple-scheduler';
 
 describe('SimpleScheduler', () => {
   let registry: SimpleJobRegistry;
@@ -590,5 +586,48 @@ describe('SimpleScheduler', () => {
       expect(await job.output.toPromise()).toBe(103);
       expect(outputs).toEqual([101, 103]);
     });
+
+    it('works deferred', async () => {
+      // This is a more complex test. The job returns an output deferred from the input
+      registry.register(
+        'job',
+        createJobHandler<number, number, number>((argument, context) => {
+          return new Observable<number>(subscriber => {
+            context.input.subscribe(x => {
+              if (x === null) {
+                setTimeout(() => subscriber.complete(), 10);
+              } else {
+                setTimeout(() => subscriber.next(parseInt('' + x) + argument), x);
+              }
+            });
+          });
+        }),
+      );
+
+      const job = scheduler.schedule('job', 100);
+      const outputs: number[] = [];
+
+      job.output.subscribe(x => outputs.push(x as number));
+
+      job.input.next(1);
+      job.input.next(2);
+      job.input.next(3);
+      job.input.next(null);
+
+      expect(await job.output.toPromise()).toBe(103);
+      expect(outputs).toEqual(jasmine.arrayWithExactContents([101, 102, 103]));
+    });
+  });
+
+  it('propagates errors', async () => {
+    registry.register('job', createJobHandler(() => { throw 1; }));
+    const job = scheduler.schedule('job', 0);
+
+    try {
+      await job.output.toPromise();
+      expect('THE ABOVE LINE SHOULD NOT ERROR').toBe('false');
+    } catch (error) {
+      expect(error).toBe(1);
+    }
   });
 });

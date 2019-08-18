@@ -28,7 +28,6 @@ import {
   tap,
 } from 'rxjs/operators';
 import { JsonValue, schema } from '../../json';
-import { NullLogger } from '../../logger';
 import {
   Job,
   JobDescription,
@@ -47,6 +46,11 @@ import {
 import { JobDoesNotExistException } from './exception';
 
 
+export class JobArgumentSchemaValidationError extends schema.SchemaValidationException {
+  constructor(errors?: schema.SchemaValidatorError[]) {
+    super(errors, 'Job Argument failed to validate. Errors: ');
+  }
+}
 export class JobInboundMessageSchemaValidationError extends schema.SchemaValidationException {
   constructor(errors?: schema.SchemaValidatorError[]) {
     super(errors, 'Job Inbound Message failed to validate. Errors: ');
@@ -144,7 +148,9 @@ export class SimpleScheduler<
         }
 
         const description: JobDescription = {
-          name,
+          // Make a copy of it to be sure it's proper JSON.
+          ...JSON.parse(JSON.stringify(handler.jobDescription)),
+          name: handler.jobDescription.name || name,
           argument: handler.jobDescription.argument || true,
           input: handler.jobDescription.input || true,
           output: handler.jobDescription.output || true,
@@ -298,8 +304,6 @@ export class SimpleScheduler<
     let state = JobState.Queued;
     let pingId = 0;
 
-    const logger = options.logger ? options.logger.createChild('job') : new NullLogger();
-
     // Create the input channel by having a filter.
     const input = new Subject<JsonValue>();
     input.pipe(
@@ -341,10 +345,6 @@ export class SimpleScheduler<
         state = this._updateState(message, state);
 
         switch (message.kind) {
-          case JobOutboundMessageKind.Log:
-            logger.next(message.entry);
-            break;
-
           case JobOutboundMessageKind.ChannelCreate: {
             const maybeSubject = channelsSubject.get(message.name);
             // If it doesn't exist or it's closed on the other end.
@@ -509,7 +509,8 @@ export class SimpleScheduler<
       waitable,
 
       from(handler).pipe(
-        switchMap(handler => new Observable((subscriber: Observer<JobOutboundMessage<O>>) => {
+        switchMap(handler => new Observable<JobOutboundMessage<O>>(
+                      (subscriber: Observer<JobOutboundMessage<O>>) => {
           if (!handler) {
             throw new JobDoesNotExistException(name);
           }
@@ -519,7 +520,7 @@ export class SimpleScheduler<
             switchMap(validate => validate(argument)),
             switchMap(output => {
               if (!output.success) {
-                throw new JobInboundMessageSchemaValidationError(output.errors);
+                throw new JobArgumentSchemaValidationError(output.errors);
               }
 
               const argument: A = output.data as A;
